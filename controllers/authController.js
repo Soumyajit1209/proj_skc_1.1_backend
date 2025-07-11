@@ -73,7 +73,7 @@ const forgotPassword = async (req, res) => {
       [user[idField], role, otp, expiresAt]
     );
 
-    // Send OTP via email
+   
     await transporter.sendMail({
       to: email,
       subject: 'Password Reset OTP',
