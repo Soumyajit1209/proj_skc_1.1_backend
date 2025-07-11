@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
+const XLSX = require('xlsx');
 
 const getDailyAttendanceAll = async (req, res) => {
   try {
@@ -60,7 +61,6 @@ const addEmployee = async (req, res) => {
   }
 
   try {
-    // Check if username already exists
     const [existing] = await pool.query('SELECT emp_id FROM employee_master WHERE username = ?', [username]);
     if (existing.length > 0) {
       return res.status(400).json({ error: 'Username already exists' });
@@ -77,4 +77,84 @@ const addEmployee = async (req, res) => {
   }
 };
 
-module.exports = { getDailyAttendanceAll, rejectAttendance, getActivityReports, getMonthlyAttendance, addEmployee };
+const downloadDailyAttendance = async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = CURDATE()'
+    );
+
+    const data = rows.map(row => ({
+      'Employee ID': row.emp_id,
+      'Full Name': row.full_name,
+      'Date': row.attendance_date,
+      'In Time': row.in_time || '',
+      'Out Time': row.out_time || '',
+      'In Location': row.in_location || '',
+      'In Latitude': row.in_latitude || '',
+      'In Longitude': row.in_longitude || '',
+      'In Picture': row.in_picture || '',
+      'Out Location': row.out_location || '',
+      'Out Latitude': row.out_latitude || '',
+      'Out Longitude': row.out_longitude || '',
+      'Out Picture': row.out_picture || '',
+      'Status': row.in_status,
+      'Remarks': row.remarks || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Daily Attendance');
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+
+    res.setHeader('Content-Disposition', 'attachment; filename=daily_attendance.xlsx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buf);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const downloadAttendanceByRange = async (req, res) => {
+  const { from_date, to_date } = req.query;
+  if (!from_date || !to_date) {
+    return res.status(400).json({ error: 'From date and to date are required' });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date BETWEEN ? AND ?',
+      [from_date, to_date]
+    );
+
+    const data = rows.map(row => ({
+      'Employee ID': row.emp_id,
+      'Full Name': row.full_name,
+      'Date': row.attendance_date,
+      'In Time': row.in_time || '',
+      'Out Time': row.out_time || '',
+      'In Location': row.in_location || '',
+      'In Latitude': row.in_latitude || '',
+      'In Longitude': row.in_longitude || '',
+      'In Picture': row.in_picture || '',
+      'Out Location': row.out_location || '',
+      'Out Latitude': row.out_latitude || '',
+      'Out Longitude': row.out_longitude || '',
+      'Out Picture': row.out_picture || '',
+      'Status': row.in_status,
+      'Remarks': row.remarks || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Attendance Range');
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+
+    res.setHeader('Content-Disposition', `attachment; filename=attendance_${from_date}_to_${to_date}.xlsx`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buf);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+module.exports = { getDailyAttendanceAll, rejectAttendance, getActivityReports, getMonthlyAttendance, addEmployee, downloadDailyAttendance, downloadAttendanceByRange };

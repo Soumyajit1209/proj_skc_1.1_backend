@@ -57,11 +57,12 @@ const submitActivityReport = async (req, res) => {
 };
 
 const applyLeave = async (req, res) => {
-  const { start_date, end_date, leave_type, reason, leave_attachment } = req.body;
+  const { start_date, end_date, leave_type, reason } = req.body;
+  const leave_attachment = req.file ? req.file.path : null;
   try {
     const [result] = await pool.query(
       'INSERT INTO leave_applications (emp_id, start_date, end_date, leave_type, reason, leave_attachment, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [req.user.id, start_date, end_date, leave_type, reason, leave_attachment || null, 'PENDING']
+      [req.user.id, start_date, end_date, leave_type, reason, leave_attachment, 'PENDING']
     );
     res.status(201).json({ leave_id: result.insertId, message: 'Leave application submitted' });
   } catch (error) {

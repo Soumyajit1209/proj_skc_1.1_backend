@@ -1,0 +1,490 @@
+Welcome Transport API Documentation
+This API documentation details all endpoints for the Welcome Transport project, designed for a mobile app (employee-facing) and an admin panel. The backend is built with Express.js, uses a MySQL database (sadhanadb), and supports JWT authentication, file uploads (for attendance photos), OTP-based password resets via email, and Excel report downloads for attendance. CORS is configured to allow requests from specified origins, ensuring compatibility with frontend and mobile app clients.
+Base URL
+http://localhost:3000/
+
+Replace http://localhost:3000 with your production server URL.
+Authentication
+
+JWT Token: Required for most endpoints (except /login, /forgot-password, /reset-password). Include in the Authorization header as Bearer <token>.
+Roles:
+employee: Access to employee-specific endpoints (e.g., attendance, activity reports, leave applications).
+admin: Access to admin-specific endpoints (e.g., view reports, reject attendance, add employees, download reports).
+
+
+CORS: Configured to allow origins like http://localhost:3000, http://localhost:8100, and production URLs. Update allowedOrigins in server.js for your environment.
+
+Error Responses
+Common error responses include:
+
+401 Unauthorized: Missing or invalid JWT token.{ "error": "Access denied" }
+
+
+403 Forbidden: Role-based access denied.{ "error": "Access denied" }
+
+
+404 Not Found: Resource not found.{ "error": "<Resource> not found" }
+
+
+400 Bad Request: Invalid input.{ "error": "<Specific error message>" }
+
+
+500 Server Error: Internal server issue.{ "error": "Server error" }
+
+
+
+Endpoints
+Authentication Endpoints
+These endpoints handle user authentication and password management for both employees and admins.
+POST /login
+Description: Authenticates a user (employee or admin) and returns a JWT token.
+
+Usage: Used by the mobile app and admin panel to log in users.
+Request Body:{
+  "username": "string", // Employee username or admin username
+  "password": "string", // Password
+  "role": "employee|admin" // User role
+}
+
+
+Response (200 OK):{
+  "token": "string", // JWT token
+  "role": "employee|admin"
+}
+
+
+Errors:
+400: Invalid credentials{ "error": "Invalid credentials" }
+
+
+
+
+Notes: Queries employee_master for employees or admin for admins based on role.
+
+POST /change-password
+Description: Allows authenticated users to change their password.
+
+Usage: Employees or admins update their password after logging in.
+Authentication: Requires JWT token (employee or admin).
+Request Body:{
+  "oldPassword": "string", // Current password
+  "newPassword": "string" // New password
+}
+
+
+Response (200 OK):{ "message": "Password changed successfully" }
+
+
+Errors:
+400: Invalid old password{ "error": "Invalid old password" }
+
+
+404: User not found{ "error": "User not found" }
+
+
+
+
+Notes: Passwords are hashed using bcryptjs before storage.
+
+POST /forgot-password
+Description: Generates a 6-digit OTP and sends it to the user's email for password reset.
+
+Usage: Initiates password reset for employees (email_id) or admins (username as email).
+Request Body:{
+  "email": "string", // Employee email_id or admin username
+  "role": "employee|admin" // User role
+}
+
+
+Response (200 OK):{ "message": "OTP sent to email" }
+
+
+Errors:
+404: User not found{ "error": "User not found" }
+
+
+
+
+Notes: OTP is stored in password_reset_tokens with a 15-minute expiry. Email is sent via Nodemailer; configure SMTP in authController.js.
+
+POST /reset-password
+Description: Resets the user's password using the OTP.
+
+Usage: Completes password reset after receiving OTP.
+Request Body:{
+  "otp": "string", // 6-digit OTP
+  "newPassword": "string", // New password
+  "role": "employee|admin" // User role
+}
+
+
+Response (200 OK):{ "message": "Password reset successfully" }
+
+
+Errors:
+400: Invalid or expired OTP{ "error": "Invalid or expired OTP" }
+
+
+
+
+Notes: Deletes the OTP record after successful reset.
+
+Employee Endpoints
+These endpoints are for the mobile app, accessible only to users with the employee role.
+POST /attendance
+Description: Records employee attendance with in/out details, location, and optional photos. Attendance is auto-approved (in_status='APPROVED').
+
+Usage: Employees record check-in/check-out with geolocation and selfies.
+Authentication: Requires JWT token (employee role).
+Request Body (multipart/form-data):{
+  "in_time": "string", // Format: HH:MM:SS (optional)
+  "out_time": "string", // Format: HH:MM:SS (optional)
+  "in_location": "string", // Check-in location description
+  "in_latitude": "string", // Check-in latitude
+  "in_longitude": "string", // Check-in longitude
+  "out_location": "string", // Check-out location description (optional)
+  "out_latitude": "string", // Check-out latitude (optional)
+  "out_longitude": "string", // Check-out longitude (optional)
+  "in_picture": "file", // Check-in selfie (optional)
+  "out_picture": "file" // Check-out selfie (optional)
+}
+
+
+Response (201 Created):{ "message": "Attendance recorded" }
+
+
+Notes: Photos are stored in uploads/selfies with unique filenames (e.g., timestamp-filename.jpg) using multer.
+
+GET /attendance/daily
+Description: Retrieves the employee's attendance records for the current day.
+
+Usage: Employees view their daily check-in/check-out details.
+Authentication: Requires JWT token (employee role).
+Response (200 OK):[
+  {
+    "attendance_id": "integer",
+    "emp_id": "integer",
+    "attendance_date": "string", // Format: YYYY-MM-DD
+    "in_time": "string", // Format: HH:MM:SS
+    "out_time": "string|null",
+    "in_location": "string",
+    "in_latitude": "string",
+    "in_longitude": "string",
+    "in_picture": "string|null",
+    "out_location": "string|null",
+    "out_latitude": "string|null",
+    "out_longitude": "string|null",
+    "out_picture": "string|null",
+    "in_status": "APPROVED|REJECTED",
+    "remarks": "string|null"
+  }
+]
+
+
+
+POST /activity
+Description: Submits an activity report with customer details and remarks.
+
+Usage: Employees log daily activities or client interactions.
+Authentication: Requires JWT token (employee role).
+Request Body:{
+  "customer_name": "string", // Customer name
+  "remarks": "string" // Activity details
+}
+
+
+Response (201 Created):{
+  "activity_id": "integer",
+  "message": "Activity report submitted"
+}
+
+
+
+POST /leave
+Description: Submits a leave application with start/end dates, type, and reason.
+
+Usage: Employees apply for leave through the mobile app.
+Authentication: Requires JWT token (employee role).
+Request Body:{
+  "start_date": "string", // Format: YYYY-MM-DD
+  "end_date": "string", // Format: YYYY-MM-DD
+  "leave_type": "string", // e.g., Sick, Vacation
+  "reason": "string", // Leave reason
+  "leave_attachment": "string|null" // Optional attachment URL/path
+}
+
+
+Response (201 Created):{
+  "leave_id": "integer",
+  "message": "Leave application submitted"
+}
+
+
+Notes: total_days is calculated automatically in the database.
+
+Admin Endpoints
+These endpoints are for the admin panel, accessible only to users with the admin role.
+GET /admin/attendance/daily
+Description: Retrieves daily attendance records for all employees.
+
+Usage: Admins monitor daily attendance across the organization.
+Authentication: Requires JWT token (admin role).
+Response (200 OK):[
+  {
+    "attendance_id": "integer",
+    "emp_id": "integer",
+    "full_name": "string",
+    "attendance_date": "string", // Format: YYYY-MM-DD
+    "in_time": "string",
+    "out_time": "string|null",
+    "in_location": "string",
+    "in_latitude": "string",
+    "in_longitude": "string",
+    "in_picture": "string|null",
+    "out_location": "string|null",
+    "out_latitude": "string|null",
+    "out_longitude": "string|null",
+    "out_picture": "string|null",
+    "in_status": "APPROVED|REJECTED",
+    "remarks": "string|null"
+  }
+]
+
+
+
+GET /admin/attendance/daily/download
+Description: Downloads daily attendance records as an Excel file.
+
+Usage: Admins export the current day's attendance for reporting or analysis.
+Authentication: Requires JWT token (admin role).
+Response (200 OK):
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+Content-Disposition: attachment; filename=daily_attendance.xlsx
+Returns a binary Excel file with columns: Employee ID, Full Name, Date, In Time, Out Time, In Location, In Latitude, In Longitude, In Picture, Out Location, Out Latitude, Out Longitude, Out Picture, Status, Remarks.
+
+
+Errors:
+500: Server error{ "error": "Server error" }
+
+
+
+
+Notes: Generated using the xlsx package. Null values are mapped to empty strings for clarity.
+
+GET /admin/attendance/range/download
+Description: Downloads attendance records for a specified date range as an Excel file.
+
+Usage: Admins export attendance for a custom date range (e.g., weekly or monthly reports).
+Authentication: Requires JWT token (admin role).
+Query Parameters:
+from_date: String (YYYY-MM-DD, required)
+to_date: String (YYYY-MM-DD, required)
+
+
+Response (200 OK):
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+Content-Disposition: attachment; filename=attendance_<from_date>_to_<to_date>.xlsx
+Returns a binary Excel file with columns: Employee ID, Full Name, Date, In Time, Out Time, In Location, In Latitude, In Longitude, In Picture, Out Location, Out Latitude, Out Longitude, Out Picture, Status, Remarks.
+
+
+Errors:
+400: Missing required parameters{ "error": "From date and to date are required" }
+
+
+500: Server error{ "error": "Server error" }
+
+
+
+
+Notes: Filename includes date range for clarity (e.g., attendance_2025-07-01_to_2025-07-31.xlsx).
+
+PUT /admin/attendance/:attendance_id/reject
+Description: Rejects an attendance record with a reason.
+
+Usage: Admins override auto-approved attendance entries.
+Authentication: Requires JWT token (admin role).
+Parameters:
+attendance_id: Integer (path parameter)
+
+
+Request Body:{
+  "remarks": "string" // Reason for rejection
+}
+
+
+Response (200 OK):{ "message": "Attendance rejected" }
+
+
+Errors:
+404: Attendance not found{ "error": "Attendance not found" }
+
+
+
+
+
+GET /admin/activity
+Description: Retrieves activity reports for all employees, optionally filtered by date.
+
+Usage: Admins view daily or historical activity reports, exportable to Excel on the frontend.
+Authentication: Requires JWT token (admin role).
+Query Parameters:
+date: Optional, format YYYY-MM-DD
+
+
+Response (200 OK):[
+  {
+    "activity_id": "integer",
+    "activity_datetime": "string", // Format: YYYY-MM-DD HH:MM:SS
+    "customer_name": "string",
+    "remarks": "string",
+    "emp_id": "integer",
+    "full_name": "string"
+  }
+]
+
+
+Notes: Use a frontend library like xlsx to convert JSON to Excel if needed.
+
+GET /admin/attendance/monthly
+Description: Retrieves monthly attendance records for all employees.
+
+Usage: Admins generate monthly reports, exportable to Excel on the frontend.
+Authentication: Requires JWT token (admin role).
+Query Parameters:
+month: Integer (1-12)
+year: Integer (e.g., 2025)
+
+
+Response (200 OK):[
+  {
+    "attendance_id": "integer",
+    "emp_id": "integer",
+    "full_name": "string",
+    "attendance_date": "string",
+    "in_time": "string",
+    "out_time": "string|null",
+    "in_location": "string",
+    "in_latitude": "string",
+    "in_longitude": "string",
+    "in_picture": "string|null",
+    "out_location": "string|null",
+    "out_latitude": "string|null",
+    "out_longitude": "string|null",
+    "out_picture": "string|null",
+    "in_status": "APPROVED|REJECTED",
+    "remarks": "string|null"
+  }
+]
+
+
+Notes: Use a frontend library like xlsx to convert JSON to Excel if needed.
+
+POST /admin/employee
+Description: Adds a new employee to the employee_master table.
+
+Usage: Admins create new employee accounts.
+Authentication: Requires JWT token (admin role).
+Request Body:{
+  "full_name": "string", // Required
+  "phone_no": "string", // Optional
+  "email_id": "string", // Optional
+  "aadhaar_no": "string", // Optional
+  "username": "string", // Required, must be unique
+  "password": "string", // Required
+  "profile_picture": "string|null" // Optional URL/path
+}
+
+
+Response (201 Created):{
+  "emp_id": "integer",
+  "message": "Employee added successfully"
+}
+
+
+Errors:
+400: Missing required fields or username exists{ "error": "Full name, username, and password are required" }
+
+{ "error": "Username already exists" }
+
+
+
+
+Notes: Password is hashed using bcryptjs. is_active is set to 1 by default.
+
+Database Schema
+The API interacts with the sadhanadb MySQL database, with the following tables:
+
+employee_master: Stores employee details (emp_id, full_name, phone_no, email_id, aadhaar_no, username, password, profile_picture, is_active, created_at, updated_at).
+admin: Stores admin details (id, username, password, created_at, updated_at).
+attendance_register: Stores attendance records (attendance_id, emp_id, attendance_date, in_time, out_time, in_location, in_latitude, in_longitude, in_picture, out_location, out_latitude, out_longitude, out_picture, in_status, remarks).
+activities: Stores activity reports (activity_id, activity_datetime, customer_name, remarks, emp_id).
+leave_applications: Stores leave requests (leave_id, application_datetime, emp_id, start_date, end_date, total_days, leave_type, reason, leave_attachment, status, approved_by, approved_on).
+password_reset_tokens: Stores OTPs for password resets (id, user_id, role, otp, expires_at, created_at).
+
+Setup Notes
+
+Dependencies: Install via npm install express jsonwebtoken bcryptjs mysql2 cors multer nodemailer dotenv xlsx.
+Database: Use sadhanadb.sql and reset_tokens.sql to set up the database.
+Email: Configure Nodemailer in authController.js with SMTP credentials (e.g., Ethereal for testing, Gmail for production).
+CORS: Update allowedOrigins in server.js with your frontend and app URLs:const allowedOrigins = [
+  'http://localhost:3000', // Frontend
+  'http://localhost:8100', // Mobile app (e.g., Ionic)
+  'https://yourfrontend.com', // Production frontend
+  'https://yourapp.com', // Production app
+];
+
+
+Environment Variables: Use a .env file:DB_HOST=127.0.0.1
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_NAME=sadhanadb
+JWT_SECRET=your_jwt_secret_key
+SMTP_HOST=smtp.ethereal.email
+SMTP_PORT=587
+SMTP_USER=your_smtp_user
+SMTP_PASS=your_smtp_password
+
+
+File Uploads: Photos are stored in uploads/selfies. Ensure the directory exists (mkdir -p uploads/selfies).
+Security: Use HTTPS, input validation, and rate limiting in production.
+
+Example Usage
+Employee Login (Mobile App)
+curl -X POST http://localhost:3000/login \
+-H "Content-Type: application/json" \
+-d '{"username":"johndoe","password":"password123","role":"employee"}'
+
+Admin Adding Employee
+curl -X POST http://localhost:3000/admin/employee \
+-H "Authorization: Bearer <admin_token>" \
+-H "Content-Type: application/json" \
+-d '{"full_name":"John Doe","username":"johndoe","password":"password123","email_id":"john@example.com"}'
+
+Download Daily Attendance (Admin)
+curl -X GET http://localhost:3000/admin/attendance/daily/download \
+-H "Authorization: Bearer <admin_token>" \
+--output daily_attendance.xlsx
+
+Download Attendance by Date Range (Admin)
+curl -X GET "http://localhost:3000/admin/attendance/range/download?from_date=2025-07-01&to_date=2025-07-31" \
+-H "Authorization: Bearer <admin_token>" \
+--output attendance_2025-07-01_to_2025-07-31.xlsx
+
+Forgot Password
+curl -X POST http://localhost:3000/forgot-password \
+-H "Content-Type: application/json" \
+-d '{"email":"john@example.com","role":"employee"}'
+
+Reset Password
+curl -X POST http://localhost:3000/reset-password \
+-H "Content-Type: application/json" \
+-d '{"otp":"123456","newPassword":"newpassword123","role":"employee"}'
+
+Notes
+
+Excel Downloads: Generated server-side using xlsx. Files include all relevant attendance data with full_name from employee_master. Null values are converted to empty strings for clarity.
+Email Testing: Use Ethereal (https://ethereal.email) for testing OTP emails; check the dashboard for sent emails.
+Production Email: Configure a reliable SMTP service (e.g., Gmail, SendGrid) with .env credentials.
+Activity/Monthly Reports: /admin/activity and /admin/attendance/monthly return JSON; use frontend xlsx for Excel conversion if needed.
+CORS: Ensure allowedOrigins includes your frontend and app URLs to avoid CORS errors.
+Security: Implement HTTPS, input sanitization, and rate limiting in production.

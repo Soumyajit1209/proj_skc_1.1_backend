@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const pool = require('../config/db');
 
-const JWT_SECRET = 'your_jwt_secret_key'; 
+const JWT_SECRET = process.env.JWT_SECRET; 
 
 // Nodemailer configuration (use your SMTP service or a test service like Ethereal)
 const transporter = nodemailer.createTransport({
