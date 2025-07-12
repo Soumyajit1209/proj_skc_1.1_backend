@@ -155,6 +155,19 @@ const downloadAttendanceByRange = async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
+
+
 };
 
-module.exports = { getDailyAttendanceAll, rejectAttendance, getActivityReports, getMonthlyAttendance, addEmployee, downloadDailyAttendance, downloadAttendanceByRange };
+const getAllEmployees = async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, is_active, created_at, updated_at FROM employee_master'
+    );
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+module.exports = { getDailyAttendanceAll, rejectAttendance, getActivityReports, getMonthlyAttendance, addEmployee, downloadDailyAttendance, downloadAttendanceByRange,getAllEmployees};

@@ -3,7 +3,7 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const adminRoutes = require('./routes/adminRoutes');
-
+require('dotenv').config();
 const app = express();
 const port = 3001;
 
@@ -39,6 +39,8 @@ app.use('/api', authRoutes);
 app.use('/api', employeeRoutes);
 app.use('/api/admin', adminRoutes);
 
+
+
 // Error handling for CORS
 app.use((err, req, res, next) => {
   if (err.message === 'Not allowed by CORS') {
@@ -49,5 +51,6 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(port, () => {
+   // Should display all environment variables
   console.log(`Server running on port ${port}`);
 });

@@ -3,8 +3,8 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const pool = require('../config/db');
 
-const JWT_SECRET = process.env.JWT_SECRET; 
-
+const JWT_SECRET ="acb6ebcf5cd7b331a5e3b7ea4397c3b1ee1367bfc924102f8dc5f191f213ee19dc2cae4dc2d7f4338aa0f441df483fb3bbcea9b4248b70489a9078f6acb218cc"; 
+ //const JWT_SECRET = process.env.JWT_SECRET;
 // Nodemailer configuration (use your SMTP service or a test service like Ethereal)
 const transporter = nodemailer.createTransport({
   host: 'smtp.ethereal.email', // Replace with your SMTP host (e.g., smtp.gmail.com)
@@ -22,12 +22,17 @@ const login = async (req, res) => {
     const idField = role === 'admin' ? 'id' : 'emp_id';
     const [rows] = await pool.query(`SELECT ${idField}, password FROM ${table} WHERE username = ?`, [username]);
     const user = rows[0];
-    if (!user) return res.status(400).json({ error: 'Invalid credentials' });
+    if (!user) return res.status(400).json({ error: 'error in username' });
+
+    
+    if (!user.password || user.password.length < 30) {
+      return res.status(500).json({ error: 'Stored password is not hashed. Please reset your password.' });
+    }
 
     const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) return res.status(400).json({ error: 'Invalid credentials' });
+    if (!validPassword) return res.status(400).json({ error: 'error in password' });
 
-    const token = jwt.sign({ id: user[idField], role }, JWT_SECRET, { expiresIn: '1h' });
+      const token = jwt.sign({ id: user[idField], role }, JWT_SECRET, { expiresIn: '1h' });
     res.json({ token, role });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
