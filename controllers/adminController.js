@@ -155,8 +155,6 @@ const downloadAttendanceByRange = async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
-
-
 };
 
 const getAllEmployees = async (req, res) => {
@@ -170,4 +168,116 @@ const getAllEmployees = async (req, res) => {
   }
 };
 
-module.exports = { getDailyAttendanceAll, rejectAttendance, getActivityReports, getMonthlyAttendance, addEmployee, downloadDailyAttendance, downloadAttendanceByRange,getAllEmployees};
+const updateEmployee = async (req, res) => {
+  const { emp_id } = req.params;
+  const { full_name, phone_no, email_id, aadhaar_no, username, password, profile_picture, is_active } = req.body;
+
+  try {
+    // Check if employee exists
+    const [existing] = await pool.query('SELECT emp_id FROM employee_master WHERE emp_id = ?', [emp_id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    // Check for username conflict (if username is being updated)
+    if (username) {
+      const [usernameCheck] = await pool.query('SELECT emp_id FROM employee_master WHERE username = ? AND emp_id != ?', [username, emp_id]);
+      if (usernameCheck.length > 0) {
+        return res.status(400).json({ error: 'Username already exists' });
+      }
+    }
+
+    // Prepare update query
+    const fields = [];
+    const values = [];
+    if (full_name) {
+      fields.push('full_name = ?');
+      values.push(full_name);
+    }
+    if (phone_no) {
+      fields.push('phone_no = ?');
+      values.push(phone_no);
+    }
+    if (email_id) {
+      fields.push('email_id = ?');
+      values.push(email_id);
+    }
+    if (aadhaar_no) {
+      fields.push('aadhaar_no = ?');
+      values.push(aadhaar_no);
+    }
+    if (username) {
+      fields.push('username = ?');
+      values.push(username);
+    }
+    if (password) {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      fields.push('password = ?');
+      values.push(hashedPassword);
+    }
+    if (profile_picture) {
+      fields.push('profile_picture = ?');
+      values.push(profile_picture);
+    }
+    if (is_active !== undefined) {
+      fields.push('is_active = ?');
+      values.push(is_active ? 1 : 0);
+    }
+    fields.push('updated_at = NOW()');
+
+    if (fields.length === 1) { // Only updated_at
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    const query = `UPDATE employee_master SET ${fields.join(', ')} WHERE emp_id = ?`;
+    values.push(emp_id);
+
+    const [result] = await pool.query(query, values);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    res.json({ message: 'Employee updated successfully' });
+  } catch (error) {
+    console.error('Update employee error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const deleteEmployee = async (req, res) => {
+  const { emp_id } = req.params;
+
+  try {
+    // Check if employee exists
+    const [existing] = await pool.query('SELECT emp_id FROM employee_master WHERE emp_id = ?', [emp_id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    // Delete employee
+    const [result] = await pool.query('DELETE FROM employee_master WHERE emp_id = ?', [emp_id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    res.json({ message: 'Employee deleted successfully' });
+  } catch (error) {
+    console.error('Delete employee error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+module.exports = {
+  getDailyAttendanceAll,
+  rejectAttendance,
+  getActivityReports,
+  getMonthlyAttendance,
+  addEmployee,
+  downloadDailyAttendance,
+  downloadAttendanceByRange,
+  getAllEmployees,
+  updateEmployee,
+  deleteEmployee
+};
