@@ -1,6 +1,8 @@
 const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
 const XLSX = require('xlsx');
+const path = require('path');
 
 const getDailyAttendanceAll = async (req, res) => {
   try {
@@ -54,27 +56,77 @@ const getMonthlyAttendance = async (req, res) => {
   }
 };
 
-const addEmployee = async (req, res) => {
-  const { full_name, phone_no, email_id, aadhaar_no, username, password, profile_picture } = req.body;
-  if (!full_name || !username || !password) {
-    return res.status(400).json({ error: 'Full name, username, and password are required' });
-  }
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/profile_picture'); // Ensure this directory exists
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, `employee-${uniqueSuffix}${path.extname(file.originalname)}`);
+  },
+});
 
-  try {
-    const [existing] = await pool.query('SELECT emp_id FROM employee_master WHERE username = ?', [username]);
-    if (existing.length > 0) {
-      return res.status(400).json({ error: 'Username already exists' });
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      return cb(new Error('Please upload an image file'), false);
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      return cb(new Error('Image size should not exceed 5MB'), false);
+    }
+    cb(null, true);
+  },
+});
+
+const addEmployee = async (req, res) => {
+  // Use multer to parse the file
+  upload.single('profile_picture')(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const [result] = await pool.query(
-      'INSERT INTO employee_master (full_name, phone_no, email_id, aadhaar_no, username, password, profile_picture, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [full_name, phone_no || null, email_id || null, aadhaar_no || null, username, hashedPassword, profile_picture || null, 1]
-    );
-    res.status(201).json({ emp_id: result.insertId, message: 'Employee added successfully' });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
+    const { full_name, phone_no, email_id, aadhaar_no, username, password, is_active } = req.body;
+
+    // Validate required fields
+    if (!full_name || !username || !password) {
+      return res.status(400).json({ error: 'Full name, username, and password are required' });
+    }
+
+    try {
+      // Check for existing username
+      const [existing] = await pool.query('SELECT emp_id FROM employee_master WHERE username = ?', [username]);
+      if (existing.length > 0) {
+        return res.status(400).json({ error: 'Username already exists' });
+      }
+
+      // Hash the password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Get file path if uploaded
+      const profilePicturePath = req.file ? `/uploads/${req.file.filename}` : null;
+
+      // Insert employee data into the database
+      const [result] = await pool.query(
+        'INSERT INTO employee_master (full_name, phone_no, email_id, aadhaar_no, username, password, profile_picture, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          full_name,
+          phone_no || null,
+          email_id || null,
+          aadhaar_no || null,
+          username,
+          hashedPassword,
+          profilePicturePath, // Store file path instead of base64
+          is_active !== undefined ? Number(is_active) : 1,
+        ]
+      );
+
+      res.status(201).json({ emp_id: result.insertId, message: 'Employee added successfully' });
+    } catch (error) {
+      console.error('Error adding employee:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
 };
 
 const downloadDailyAttendance = async (req, res) => {
@@ -220,8 +272,12 @@ const updateEmployee = async (req, res) => {
       values.push(profile_picture);
     }
     if (is_active !== undefined) {
+      const isActiveValue = Number(is_active); 
+      if (isNaN(isActiveValue) || (isActiveValue !== 0 && isActiveValue !== 1)) {
+        return res.status(400).json({ error: 'Invalid is_active value. Must be 0 or 1.' });
+      }
       fields.push('is_active = ?');
-      values.push(is_active ? 1 : 0);
+      values.push(isActiveValue);
     }
     fields.push('updated_at = NOW()');
 
