@@ -7,13 +7,11 @@ require('dotenv').config();
 const app = express();
 const port = 3001;
 
-// CORS configuration
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:8100', 
-  'https://yourfrontend.com', 
-  'https://yourapp.com',
-];
+
+
+const frontendOrigins = process.env.FRONTEND_ORIGINS?.split(',') || [];
+const appOrigins = process.env.APP_ORIGINS?.split(',') || [];
+const allowedOrigins = [...frontendOrigins, ...appOrigins];
 
 app.use(
   cors({

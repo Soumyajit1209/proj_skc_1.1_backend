@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const { authenticateToken, restrictTo } = require('../middleware/authMiddleware');
-const { recordAttendance, getDailyAttendance, submitActivityReport, applyLeave } = require('../controllers/employeeController');
+const { recordAttendance, getDailyAttendance, submitActivityReport, applyLeave, getEmployeeLeaves } = require('../controllers/employeeController');
 
 const router = express.Router();
 
@@ -50,5 +50,6 @@ router.post(
   leaveUpload.single('leave_attachment'),
   applyLeave
 );
+router.get('/leaves', authenticateToken, restrictTo('employee'), getEmployeeLeaves);
 
 module.exports = router;

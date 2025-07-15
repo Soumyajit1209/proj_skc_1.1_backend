@@ -59,15 +59,39 @@ const submitActivityReport = async (req, res) => {
 const applyLeave = async (req, res) => {
   const { start_date, end_date, leave_type, reason } = req.body;
   const leave_attachment = req.file ? req.file.path : null;
+  
+  // Validate required fields
+  if (!start_date || !end_date || !leave_type || !reason) {
+    return res.status(400).json({ error: 'Start date, end date, leave type, and reason are required' });
+  }
+
   try {
     const [result] = await pool.query(
       'INSERT INTO leave_applications (emp_id, start_date, end_date, leave_type, reason, leave_attachment, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [req.user.id, start_date, end_date, leave_type, reason, leave_attachment, 'PENDING']
     );
-    res.status(201).json({ leave_id: result.insertId, message: 'Leave application submitted' });
+    res.status(201).json({ leave_id: result.insertId, message: 'Leave application submitted successfully' });
   } catch (error) {
+    console.error('Error submitting leave application:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };
 
-module.exports = { recordAttendance, getDailyAttendance, submitActivityReport, applyLeave };
+const getEmployeeLeaves = async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT la.*, em.full_name, a.username AS approved_by_username ' +
+      'FROM leave_applications la ' +
+      'LEFT JOIN employee_master em ON la.emp_id = em.emp_id ' +
+      'LEFT JOIN admin a ON la.approved_by = a.id ' +
+      'WHERE la.emp_id = ?',
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching employee leaves:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+module.exports = { recordAttendance, getDailyAttendance, submitActivityReport, applyLeave, getEmployeeLeaves };
