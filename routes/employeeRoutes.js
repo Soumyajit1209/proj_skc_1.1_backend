@@ -1,13 +1,13 @@
 const express = require('express');
 const multer = require('multer');
 const { authenticateToken, restrictTo } = require('../middleware/authMiddleware');
-const { recordAttendance, getDailyAttendance, submitActivityReport, applyLeave, getEmployeeLeaves } = require('../controllers/employeeController');
+const { recordInTime, recordOutTime, getDailyAttendance, submitActivityReport, getEmployeeActivityReports, applyLeave, getEmployeeLeaves, getEmployeeById } = require('../controllers/employeeController');
 
 const router = express.Router();
 
 // Multer setup for photo uploads (attendance)
 const attendanceStorage = multer.diskStorage({
-  destination: './uploads/selfies',
+  destination: './Uploads/selfies',
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}-${file.originalname}`);
   },
@@ -15,7 +15,7 @@ const attendanceStorage = multer.diskStorage({
 
 // Multer setup for leave attachments (PDF or images)
 const leaveStorage = multer.diskStorage({
-  destination: './uploads/leave_attachments',
+  destination: './Uploads/leave_attachments',
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}-${file.originalname}`);
   },
@@ -35,21 +35,35 @@ const attendanceUpload = multer({ storage: attendanceStorage });
 const leaveUpload = multer({ storage: leaveStorage, fileFilter });
 
 router.post(
-  '/attendance',
+  '/attendance/in',
   authenticateToken,
   restrictTo('employee'),
-  attendanceUpload.fields([{ name: 'in_picture', maxCount: 1 }, { name: 'out_picture', maxCount: 1 }]),
-  recordAttendance
+  attendanceUpload.single('in_picture'),
+  recordInTime
 );
-router.get('/attendance/daily', authenticateToken, restrictTo('employee'), getDailyAttendance);
-router.post('/activity', authenticateToken, restrictTo('employee'), submitActivityReport);
+
+router.post(
+  '/attendance/out',
+  restrictTo('employee'),
+  attendanceUpload.single('out_picture'),
+  recordOutTime
+);
+
+router.get('/attendance/daily', restrictTo('employee'), getDailyAttendance);
+
+router.post('/activity',  restrictTo('employee'), submitActivityReport);
+
+router.get('/employee/activity', restrictTo('employee'), getEmployeeActivityReports);
+
 router.post(
   '/leave',
-  authenticateToken,
   restrictTo('employee'),
   leaveUpload.single('leave_attachment'),
   applyLeave
 );
-router.get('/leaves', authenticateToken, restrictTo('employee'), getEmployeeLeaves);
+
+router.get('/leaves', restrictTo('employee'), getEmployeeLeaves);
+
+router.get('/employee/:emp_id', restrictTo('employee'), getEmployeeById);
 
 module.exports = router;

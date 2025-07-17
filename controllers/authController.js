@@ -3,8 +3,8 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const pool = require('../config/db');
 
-const JWT_SECRET ="acb6ebcf5cd7b331a5e3b7ea4397c3b1ee1367bfc924102f8dc5f191f213ee19dc2cae4dc2d7f4338aa0f441df483fb3bbcea9b4248b70489a9078f6acb218cc"; 
- //const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || "acb6ebcf5cd7b331a5e3b7ea4397c3b1ee1367bfc924102f8dc5f191f213ee19dc2cae4dc2d7f4338aa0f441df483fb3bbcea9b4248b70489a9078f6acb218cc";
+
 // Nodemailer configuration (use your SMTP service or a test service like Ethereal)
 const transporter = nodemailer.createTransport({
   host: 'smtp.ethereal.email', // Replace with your SMTP host (e.g., smtp.gmail.com)
@@ -16,27 +16,49 @@ const transporter = nodemailer.createTransport({
 });
 
 const login = async (req, res) => {
+  // Log request body for debugging
+  console.log('Request body:', req.body);
+
+  // Validate request body
+  if (!req.body || !req.body.username || !req.body.password || !req.body.role) {
+    return res.status(400).json({ error: 'Missing username, password, or role in request body' });
+  }
+
   const { username, password, role } = req.body;
   try {
     const table = role === 'admin' ? 'admin' : 'employee_master';
     const idField = role === 'admin' ? 'id' : 'emp_id';
-    const [rows] = await pool.query(`SELECT ${idField}, password FROM ${table} WHERE username = ?`, [username]);
-    const user = rows[0];
-    if (!user) return res.status(400).json({ error: 'error in username' });
-
     
+    // Define fields to select based on role
+    const fields = role === 'admin' 
+      ? 'id, username, password' // Adjust fields for admin table as needed
+      : 'emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, password, is_active, created_at, updated_at';
+    
+    const [rows] = await pool.query(`SELECT ${fields} FROM ${table} WHERE username = ?`, [username]);
+    const user = rows[0];
+    if (!user) return res.status(400).json({ error: 'Invalid username' });
+
+    // Check if password is hashed
     if (!user.password || user.password.length < 30) {
       return res.status(500).json({ error: 'Stored password is not hashed. Please reset your password.' });
     }
 
+    // Verify password
     const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) return res.status(400).json({ error: 'error in password' });
+    if (!validPassword) return res.status(400).json({ error: 'Invalid password' });
 
-      const token = jwt.sign({ id: user[idField], role }, JWT_SECRET, { expiresIn: '1h' });
-    res.json({ token, role });
+    // Generate JWT token
+    const token = jwt.sign({ id: user[idField], role }, JWT_SECRET, { expiresIn: '1h' });
+
+    // Prepare user data to send in response (exclude password for security)
+    const userData = { ...user };
+    delete userData.password; // Remove password from response
+
+    // Send token, role, and user data
+    res.json({ token, role, user: userData });
   } catch (error) {
-    res.status(500).json({ error: 'Server error' });
     console.error('Error in login:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -57,6 +79,7 @@ const changePassword = async (req, res) => {
     await pool.query(`UPDATE ${table} SET password = ? WHERE ${idField} = ?`, [hashedPassword, id]);
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
+    console.error('Error in changePassword:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -78,7 +101,6 @@ const forgotPassword = async (req, res) => {
       [user[idField], role, otp, expiresAt]
     );
 
-   
     await transporter.sendMail({
       to: email,
       subject: 'Password Reset OTP',
@@ -109,6 +131,7 @@ const resetPassword = async (req, res) => {
     await pool.query('DELETE FROM password_reset_tokens WHERE otp = ?', [otp]);
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
+    console.error('Error in resetPassword:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };

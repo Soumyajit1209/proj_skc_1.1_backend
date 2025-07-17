@@ -30,6 +30,7 @@ app.use(
 
 // Middleware
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static('uploads'));
 
 // Routes
@@ -48,7 +49,6 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(port, () => {
-   // Should display all environment variables
-  console.log(`Server running on port ${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Server running on http://0.0.0.0:${port}`);
 });

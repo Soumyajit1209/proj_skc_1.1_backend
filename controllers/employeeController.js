@@ -1,32 +1,79 @@
 const pool = require('../config/db');
 
-const recordAttendance = async (req, res) => {
-  const { in_time, out_time, in_location, in_latitude, in_longitude, out_location, out_latitude, out_longitude } = req.body;
+const recordInTime = async (req, res) => {
+  const { in_time, in_location, in_latitude, in_longitude } = req.body;
   const in_picture = req.files?.in_picture ? req.files.in_picture[0].path : null;
-  const out_picture = req.files?.out_picture ? req.files.out_picture[0].path : null;
+
   try {
-    await pool.query(
+    // Check if an attendance record already exists for the employee on the current date
+    const [existing] = await pool.query(
+      'SELECT attendance_id FROM attendance_register WHERE emp_id = ? AND attendance_date = CURDATE()',
+      [req.user.id]
+    );
+
+    if (existing.length > 0) {
+      return res.status(400).json({ error: 'In-time already recorded for today' });
+    }
+
+    const [result] = await pool.query(
       `INSERT INTO attendance_register (
-        emp_id, attendance_date, in_time, out_time, in_location, in_latitude, in_longitude, 
-        in_picture, out_location, out_latitude, out_longitude, out_picture, in_status
-      ) VALUES (?, CURDATE(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        emp_id, attendance_date, in_time, in_location, in_latitude, in_longitude, 
+        in_picture, in_status
+      ) VALUES (?, CURDATE(), ?, ?, ?, ?, ?, ?)`,
       [
         req.user.id,
         in_time || null,
-        out_time || null,
-        in_location,
-        in_latitude,
-        in_longitude,
+        in_location || null,
+        in_latitude || null,
+        in_longitude || null,
         in_picture,
-        out_location,
-        out_latitude,
-        out_longitude,
-        out_picture,
-        'APPROVED',
+        'APPROVED'
       ]
     );
-    res.status(201).json({ message: 'Attendance recorded' });
+
+    res.status(201).json({ attendance_id: result.insertId, message: 'In-time recorded successfully' });
   } catch (error) {
+    console.error('Error recording in-time:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const recordOutTime = async (req, res) => {
+  const { out_time, out_location, out_latitude, out_longitude } = req.body;
+  const out_picture = req.files?.out_picture ? req.files.out_picture[0].path : null;
+
+  try {
+    // Find the attendance record for the employee on the current date
+    const [existing] = await pool.query(
+      'SELECT attendance_id FROM attendance_register WHERE emp_id = ? AND attendance_date = CURDATE()',
+      [req.user.id]
+    );
+
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'No in-time record found for today. Please record in-time first.' });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE attendance_register 
+       SET out_time = ?, out_location = ?, out_latitude = ?, out_longitude = ?, out_picture = ?
+       WHERE attendance_id = ?`,
+      [
+        out_time || null,
+        out_location || null,
+        out_latitude || null,
+        out_longitude || null,
+        out_picture,
+        existing[0].attendance_id
+      ]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Attendance record not found' });
+    }
+
+    res.status(200).json({ message: 'Out-time recorded successfully' });
+  } catch (error) {
+    console.error('Error recording out-time:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -39,6 +86,7 @@ const getDailyAttendance = async (req, res) => {
     );
     res.json(rows);
   } catch (error) {
+    console.error('Error fetching daily attendance:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -52,6 +100,28 @@ const submitActivityReport = async (req, res) => {
     );
     res.status(201).json({ activity_id: result.insertId, message: 'Activity report submitted' });
   } catch (error) {
+    console.error('Error submitting activity report:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+const getEmployeeActivityReports = async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT a.activity_id, a.emp_id, a.customer_name, a.remarks, a.activity_datetime, em.full_name ' +
+      'FROM activities a ' +
+      'JOIN employee_master em ON a.emp_id = em.emp_id ' +
+      'WHERE a.emp_id = ?',
+      [req.user.id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'No activity reports found for this employee' });
+    }
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching employee activity reports:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -94,4 +164,39 @@ const getEmployeeLeaves = async (req, res) => {
   }
 };
 
-module.exports = { recordAttendance, getDailyAttendance, submitActivityReport, applyLeave, getEmployeeLeaves };
+const getEmployeeById = async (req, res) => {
+  const { emp_id } = req.params;
+  
+  // Ensure the authenticated user can only access their own data
+  if (parseInt(emp_id) !== req.user.id) {
+    return res.status(403).json({ error: 'Unauthorized: You can only access your own data' });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      'SELECT emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, is_active, created_at, updated_at ' +
+      'FROM employee_master WHERE emp_id = ?',
+      [emp_id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    res.json(rows[0]);
+  } catch (error) {
+    console.error('Error fetching employee data:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+module.exports = { 
+  recordInTime,
+  recordOutTime,
+  getDailyAttendance, 
+  submitActivityReport, 
+  getEmployeeActivityReports,
+  applyLeave, 
+  getEmployeeLeaves, 
+  getEmployeeById 
+};
