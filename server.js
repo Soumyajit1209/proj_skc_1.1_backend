@@ -3,6 +3,7 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
 const app = express();
 const port = 3001;
@@ -31,7 +32,9 @@ app.use(
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 app.use('/uploads', express.static('uploads'));
+
 
 // Routes
 app.use('/api', authRoutes);
