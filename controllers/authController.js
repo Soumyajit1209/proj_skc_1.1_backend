@@ -86,6 +86,36 @@ const changePassword = async (req, res) => {
   }
 };
 
+const changePasswordbyEmployee = async (req, res) => {
+  const { emp_id, oldPassword, newPassword } = req.body;
+
+  if (!emp_id || !oldPassword || !newPassword) {
+    return res.status(400).json({ error: 'Employee ID, old password, and new password are required' });
+  }
+
+  try {
+    const [rows] = await pool.query(
+      'SELECT password FROM employee_master WHERE emp_id = ?',
+      [emp_id]
+    );
+    const user = rows[0];
+    if (!user) return res.status(404).json({ error: 'Employee not found' });
+
+    const validPassword = await bcrypt.compare(oldPassword, user.password);
+    if (!validPassword) return res.status(400).json({ error: 'Invalid old password' });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await pool.query(
+      'UPDATE employee_master SET password = ? WHERE emp_id = ?',
+      [hashedPassword, emp_id]
+    );
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Error in changePassword:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
 const forgotPassword = async (req, res) => {
   const { email, role } = req.body;
   try {
@@ -138,4 +168,4 @@ const resetPassword = async (req, res) => {
   }
 };
 
-module.exports = { login, changePassword, forgotPassword, resetPassword };
+module.exports = { login, changePassword, forgotPassword, resetPassword, changePasswordbyEmployee };

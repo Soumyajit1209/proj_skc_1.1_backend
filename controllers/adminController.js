@@ -411,7 +411,7 @@ const updateLeaveStatus = async (req, res) => {
 };
 
 const downloadLeaveApplications = async (req, res) => {
-  const { from_date, to_date } = req.query;
+  const { status, fromDate, toDate, from_date, to_date } = req.query;
 
   try {
     let query = 
@@ -421,10 +421,36 @@ const downloadLeaveApplications = async (req, res) => {
       'LEFT JOIN admin a ON la.approved_by = a.id';
     
     let params = [];
-    if (from_date && to_date) {
-      query += ' WHERE la.application_datetime BETWEEN ? AND ?';
-      params = [from_date, to_date];
+    let whereConditions = [];
+
+    // Handle status filter
+    if (status && status !== 'ALL') {
+      whereConditions.push('la.status = ?');
+      params.push(status);
     }
+
+    // Handle date range filter (support both parameter naming conventions)
+    const startDate = fromDate || from_date;
+    const endDate = toDate || to_date;
+
+    if (startDate && endDate) {
+      whereConditions.push('DATE(la.application_datetime) BETWEEN ? AND ?');
+      params.push(startDate, endDate);
+    } else if (startDate) {
+      whereConditions.push('DATE(la.application_datetime) >= ?');
+      params.push(startDate);
+    } else if (endDate) {
+      whereConditions.push('DATE(la.application_datetime) <= ?');
+      params.push(endDate);
+    }
+
+    // Add WHERE clause if there are conditions
+    if (whereConditions.length > 0) {
+      query += ' WHERE ' + whereConditions.join(' AND ');
+    }
+
+    // Order by application date (newest first)
+    query += ' ORDER BY la.application_datetime DESC';
 
     const [rows] = await pool.query(query, params);
 
@@ -447,17 +473,103 @@ const downloadLeaveApplications = async (req, res) => {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Leave Applications');
+
+    // Add filter information as a separate sheet or at the top of the main sheet
+    if (status || startDate || endDate) {
+      // Add filter info at the beginning of the worksheet
+      const filterInfo = [];
+      
+      if (status && status !== 'ALL') {
+        filterInfo.push({ 'Filter Applied': 'Status', 'Value': status });
+      }
+      
+      if (startDate) {
+        filterInfo.push({ 'Filter Applied': 'From Date', 'Value': startDate });
+      }
+      
+      if (endDate) {
+        filterInfo.push({ 'Filter Applied': 'To Date', 'Value': endDate });
+      }
+
+      if (filterInfo.length > 0) {
+        // Create a filter info sheet
+        const filterWs = XLSX.utils.json_to_sheet(filterInfo);
+        XLSX.utils.book_append_sheet(wb, filterWs, 'Filter Info');
+      }
+    }
+
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
 
-    const filename = from_date && to_date 
-      ? `leave_applications_${from_date}_to_${to_date}.xlsx`
-      : 'leave_applications.xlsx';
+    // Generate dynamic filename based on applied filters
+    let filename = 'leave_applications';
+    
+    if (status && status !== 'ALL') {
+      filename += `_${status.toLowerCase()}`;
+    }
+    
+    if (startDate || endDate) {
+      filename += '_filtered';
+      if (startDate) {
+        filename += `_from_${startDate}`;
+      }
+      if (endDate) {
+        filename += `_to_${endDate}`;
+      }
+    }
+    
+    filename += '.xlsx';
 
     res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buf);
   } catch (error) {
     console.error('Error downloading leave applications:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+const getEmployeeAttendanceReport = async (req, res) => {
+  const { emp_id } = req.params;
+  const { from_date, to_date } = req.query;
+
+  if (!from_date || !to_date) {
+    return res.status(400).json({ error: 'From date and to date are required' });
+  }
+
+  try {
+    const [attendanceRows] = await pool.query(
+      'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.emp_id = ? AND ar.attendance_date BETWEEN ? AND ?',
+      [emp_id, from_date, to_date]
+    );
+
+    const [employee] = await pool.query(
+      'SELECT emp_id, full_name FROM employee_master WHERE emp_id = ?',
+      [emp_id]
+    );
+
+    if (!employee.length) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    // Calculate total days in the range
+    const startDate = new Date(from_date);
+    const endDate = new Date(to_date);
+    const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+
+    // Calculate present and absent days
+    const presentDays = attendanceRows.filter(row => row.in_time).length;
+    const absentDays = totalDays - presentDays;
+
+    res.json({
+      employee: employee[0],
+      attendance: attendanceRows,
+      summary: {
+        totalDays,
+        presentDays,
+        absentDays
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching employee attendance report:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -476,5 +588,6 @@ module.exports = {
   getAllLeaveApplications,
   getEmployeeLeaveApplications,
   updateLeaveStatus,
-  downloadLeaveApplications
+  downloadLeaveApplications,
+  getEmployeeAttendanceReport
 };
