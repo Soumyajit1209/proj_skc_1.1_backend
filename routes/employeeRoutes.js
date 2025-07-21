@@ -1,5 +1,7 @@
 const express = require('express');
 const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
 const { validateEmpId } = require('../middleware/authMiddleware');
 const { 
   recordInTime, 
@@ -29,9 +31,9 @@ const attendanceStorage = multer.diskStorage({
 const leaveStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = 'uploads/leave_attachments';
-    if (!require('fs').existsSync(dir)) {
-      require('fs').mkdirSync(dir, { recursive: true });
-    }
+fs.mkdirSync(dir, { recursive: true });
+
+    fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
   filename: (req, file, cb) => {
@@ -40,9 +42,16 @@ const leaveStorage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-  if (allowedTypes.includes(file.mimetype)) cb(null, true);
-  else cb(new Error('Only PDF, JPG, JPEG, and PNG files are allowed'), false);
+  console.log('File MIME type:', file.mimetype);
+   const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
+  const allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+  const fileExtension = path.extname(file.originalname).toLowerCase();
+    const mimeType = file.mimetype;
+   if (allowedExtensions.includes(fileExtension) && allowedMimeTypes.includes(mimeType)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only PDF, JPG, JPEG, and PNG files are allowed'), false);
+  }
 };
 
 const attendanceUpload = multer({ storage: attendanceStorage });
@@ -106,8 +115,8 @@ router.get(
 
 router.post(
   '/leave',
-  validateEmpId,
   leaveUpload.single('leave_attachment'), 
+  validateEmpId,
   applyLeave
 );
 

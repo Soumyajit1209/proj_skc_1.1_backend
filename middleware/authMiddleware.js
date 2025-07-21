@@ -55,6 +55,41 @@ const validateEmpId = (req, res, next) => {
   req.employee = { id: empIdNum };
   next();
 };
+
+// const validateEmpId = (req, res, next) => {
+//   try {
+//     console.log('Request body:', req.body); // Debug log
+//     console.log('Request file:', req.file); // Debug log
+
+//     if (!req.body || !req.body.emp_id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Employee ID is required',
+//       });
+//     }
+
+//     const empId = req.body.emp_id;
+//     // Add validation logic (e.g., check if empId is valid)
+//     if (isNaN(empId) || empId <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid Employee ID',
+//       });
+//     }
+
+//     // Example: Attach empId to request for use in controller
+//     req.employee = { emp_id: empId };
+//     next();
+//   } catch (error) {
+//     console.error('Error in validateEmpId:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Server error during validation',
+//     });
+//   }
+// };
+
+
 const restrictTo = (...roles) => {
   return (req, res, next) => {
     const userRole = req.user?.role || req.employee?.role;

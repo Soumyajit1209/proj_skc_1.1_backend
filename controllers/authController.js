@@ -48,7 +48,7 @@ const login = async (req, res) => {
     delete userData.password;
 
     if (role === 'admin') {
-      const token = jwt.sign({ id: user[idField], role }, JWT_SECRET, { expiresIn: '1h' });
+      const token = jwt.sign({ id: user[idField], role }, JWT_SECRET, { expiresIn: '4h' });
       res.json({ token, role, user: userData });
     } else {
       res.json({ role, user: userData });
