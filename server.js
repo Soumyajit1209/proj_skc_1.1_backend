@@ -12,7 +12,7 @@ const port = 3001;
 
 const frontendOrigins = process.env.FRONTEND_ORIGINS?.split(',') || [];
 const appOrigins = process.env.APP_ORIGINS?.split(',') || [];
-const allowedOrigins = [...frontendOrigins, ...appOrigins];
+const allowedOrigins = [...frontendOrigins, ...appOrigins, '*'];
 
 app.use(
   cors({
