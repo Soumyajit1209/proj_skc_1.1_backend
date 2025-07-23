@@ -15,7 +15,8 @@ const {
   getEmployeeLeaveApplications,
   updateLeaveStatus,
   downloadLeaveApplications,
-  getEmployeeAttendanceReport
+  getEmployeeAttendanceReport,
+  downloadActivityReports
 } = require('../controllers/adminController');
 
 const router = express.Router();
@@ -30,6 +31,7 @@ router.get('/attendance/employee/:emp_id', authenticateToken, restrictTo('admin'
 
 // Activity Reports
 router.get('/activity', authenticateToken, restrictTo('admin'), getActivityReports);
+router.get('/activity/download', authenticateToken, restrictTo('admin'), downloadActivityReports);
 
 // Employee Management
 router.post('/employee', authenticateToken, restrictTo('admin'), addEmployee);

@@ -5,6 +5,7 @@ const XLSX = require('xlsx');
 const path = require('path');
 const fs = require('fs');
 
+// Existing controller functions (unchanged)
 const getDailyAttendanceAll = async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -64,7 +65,7 @@ const getMonthlyAttendance = async (req, res) => {
   }
 };
 
-const uploadDir = 'uploads/profile_picture';
+const uploadDir = 'Uploads/profile_picture';
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -113,7 +114,7 @@ const addEmployee = async (req, res) => {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const profilePicturePath = req.file ? `/uploads/profile_picture/${req.file.filename}` : null;
+        const profilePicturePath = req.file ? `/Uploads/profile_picture/${req.file.filename}` : null;
 
         const [result] = await pool.query(
           'INSERT INTO employee_master (full_name, phone_no, email_id, aadhaar_no, username, password, profile_picture, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -283,7 +284,7 @@ const updateEmployee = async (req, res) => {
               fs.unlinkSync(oldFilePath);
             }
           }
-          updateData.profile_picture = `/uploads/profile_picture/${req.file.filename}`;
+          updateData.profile_picture = `/Uploads/profile_picture/${req.file.filename}`;
         }
 
         await pool.query(
@@ -380,13 +381,11 @@ const updateLeaveStatus = async (req, res) => {
   }
 
   try {
-    // Verify admin exists
     const [admin] = await pool.query('SELECT id, username FROM admin WHERE id = ?', [req.user.id]);
     if (admin.length === 0) {
       return res.status(403).json({ error: 'Unauthorized: Admin not found' });
     }
 
-    // Verify leave application exists
     const [existing] = await pool.query('SELECT * FROM leave_applications WHERE leave_id = ?', [leave_id]);
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Leave application not found' });
@@ -423,13 +422,11 @@ const downloadLeaveApplications = async (req, res) => {
     let params = [];
     let whereConditions = [];
 
-    // Handle status filter
     if (status && status !== 'ALL') {
       whereConditions.push('la.status = ?');
       params.push(status);
     }
 
-    // Handle date range filter (support both parameter naming conventions)
     const startDate = fromDate || from_date;
     const endDate = toDate || to_date;
 
@@ -444,12 +441,10 @@ const downloadLeaveApplications = async (req, res) => {
       params.push(endDate);
     }
 
-    // Add WHERE clause if there are conditions
     if (whereConditions.length > 0) {
       query += ' WHERE ' + whereConditions.join(' AND ');
     }
 
-    // Order by application date (newest first)
     query += ' ORDER BY la.application_datetime DESC';
 
     const [rows] = await pool.query(query, params);
@@ -474,9 +469,7 @@ const downloadLeaveApplications = async (req, res) => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Leave Applications');
 
-    // Add filter information as a separate sheet or at the top of the main sheet
     if (status || startDate || endDate) {
-      // Add filter info at the beginning of the worksheet
       const filterInfo = [];
       
       if (status && status !== 'ALL') {
@@ -492,7 +485,6 @@ const downloadLeaveApplications = async (req, res) => {
       }
 
       if (filterInfo.length > 0) {
-        // Create a filter info sheet
         const filterWs = XLSX.utils.json_to_sheet(filterInfo);
         XLSX.utils.book_append_sheet(wb, filterWs, 'Filter Info');
       }
@@ -500,7 +492,6 @@ const downloadLeaveApplications = async (req, res) => {
 
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
 
-    // Generate dynamic filename based on applied filters
     let filename = 'leave_applications';
     
     if (status && status !== 'ALL') {
@@ -527,6 +518,7 @@ const downloadLeaveApplications = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
+
 const getEmployeeAttendanceReport = async (req, res) => {
   const { emp_id } = req.params;
   const { from_date, to_date } = req.query;
@@ -550,12 +542,10 @@ const getEmployeeAttendanceReport = async (req, res) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    // Calculate total days in the range
     const startDate = new Date(from_date);
     const endDate = new Date(to_date);
     const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
 
-    // Calculate present and absent days
     const presentDays = attendanceRows.filter(row => row.in_time).length;
     const absentDays = totalDays - presentDays;
 
@@ -570,6 +560,75 @@ const getEmployeeAttendanceReport = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching employee attendance report:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// New controller function for downloading activity reports
+const downloadActivityReports = async (req, res) => {
+  const { from_date, to_date } = req.query;
+
+  try {
+    let query = 'SELECT a.*, em.full_name FROM activities a JOIN employee_master em ON a.emp_id = em.emp_id';
+    let params = [];
+    let filename = 'activity_reports';
+
+    // Handle date range filter
+    if (from_date && to_date) {
+      query += ' WHERE DATE(a.activity_datetime) BETWEEN ? AND ?';
+      params.push(from_date, to_date);
+      filename += `_from_${from_date}_to_${to_date}`;
+    } else if (from_date) {
+      query += ' WHERE DATE(a.activity_datetime) >= ?';
+      params.push(from_date);
+      filename += `_from_${from_date}`;
+    } else if (to_date) {
+      query += ' WHERE DATE(a.activity_datetime) <= ?';
+      params.push(to_date);
+      filename += `_to_${to_date}`;
+    }
+
+    query += ' ORDER BY a.activity_datetime DESC';
+
+    const [rows] = await pool.query(query, params);
+
+    const data = rows.map(row => ({
+      'Activity ID': row.activity_id,
+      'Employee ID': row.emp_id,
+      'Full Name': row.full_name,
+      'Activity DateTime': row.activity_datetime,
+      'Activity Type': row.activity_type || '',
+      'Description': row.description || '',
+      'Location': row.location || '',
+      'Latitude': row.latitude || '',
+      'Longitude': row.longitude || '',
+      'Attachment': row.attachment || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Activity Reports');
+
+    // Add filter information if applied
+    if (from_date || to_date) {
+      const filterInfo = [];
+      if (from_date) {
+        filterInfo.push({ 'Filter Applied': 'From Date', 'Value': from_date });
+      }
+      if (to_date) {
+        filterInfo.push({ 'Filter Applied': 'To Date', 'Value': to_date });
+      }
+      const filterWs = XLSX.utils.json_to_sheet(filterInfo);
+      XLSX.utils.book_append_sheet(wb, filterWs, 'Filter Info');
+    }
+
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}.xlsx`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buf);
+  } catch (error) {
+    console.error('Error downloading activity reports:', error);
     res.status(500).json({ error: 'Server error' });
   }
 };
@@ -589,5 +648,6 @@ module.exports = {
   getEmployeeLeaveApplications,
   updateLeaveStatus,
   downloadLeaveApplications,
-  getEmployeeAttendanceReport
+  getEmployeeAttendanceReport,
+  downloadActivityReports 
 };
