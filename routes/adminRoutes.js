@@ -14,9 +14,11 @@ const {
   getAllLeaveApplications,
   getEmployeeLeaveApplications,
   updateLeaveStatus,
+  deleteLeaveApplication,
   downloadLeaveApplications,
   getEmployeeAttendanceReport,
-  downloadActivityReports
+  downloadActivityReports,
+  deleteActivityReport
 } = require('../controllers/adminController');
 
 const router = express.Router();
@@ -32,6 +34,7 @@ router.get('/attendance/employee/:emp_id', authenticateToken, restrictTo('admin'
 // Activity Reports
 router.get('/activity', authenticateToken, restrictTo('admin'), getActivityReports);
 router.get('/activity/download', authenticateToken, restrictTo('admin'), downloadActivityReports);
+router.delete('/activity/:activity_id', authenticateToken, restrictTo('admin'), deleteActivityReport);
 
 // Employee Management
 router.post('/employee', authenticateToken, restrictTo('admin'), addEmployee);
@@ -43,6 +46,7 @@ router.delete('/employee/:emp_id', authenticateToken, restrictTo('admin'), delet
 router.get('/leaves', authenticateToken, restrictTo('admin'), getAllLeaveApplications);
 router.get('/leaves/employee/:emp_id', authenticateToken, restrictTo('admin'), getEmployeeLeaveApplications);
 router.put('/leaves/:leave_id', authenticateToken, restrictTo('admin'), updateLeaveStatus);
+router.delete('/leaves/:leave_id', authenticateToken, restrictTo('admin'), deleteLeaveApplication);
 router.get('/leaves/download', authenticateToken, restrictTo('admin'), downloadLeaveApplications);
 
 module.exports = router;

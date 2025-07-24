@@ -11,18 +11,25 @@ const {
   checkOutAttendance,
   submitActivityReport, 
   getEmployeeActivityReports, 
+  editActivityReport,
+  deleteActivityReport,
   applyLeave, 
+  editLeaveApplication,
+  deleteLeaveApplication,
   getEmployeeLeaves, 
   getEmployeeById,
   getAttendanceByDateRange,
   getActivityReportsByDateRange,
-  getEmployeeLeavesByDateRange
+  getEmployeeLeavesByDateRange,
+  getActivityById,
+  getLeaveById
+
 } = require('../controllers/employeeController');
 
 const router = express.Router();
 
 const attendanceStorage = multer.diskStorage({
-  destination: 'uploads/selfies',
+  destination: 'Uploads/selfies',
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}-${file.originalname}`);
   },
@@ -30,9 +37,7 @@ const attendanceStorage = multer.diskStorage({
 
 const leaveStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = 'uploads/leave_attachments';
-fs.mkdirSync(dir, { recursive: true });
-
+    const dir = 'Uploads/leave_attachments';
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
@@ -43,11 +48,11 @@ fs.mkdirSync(dir, { recursive: true });
 
 const fileFilter = (req, file, cb) => {
   console.log('File MIME type:', file.mimetype);
-   const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
+  const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
   const allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
   const fileExtension = path.extname(file.originalname).toLowerCase();
-    const mimeType = file.mimetype;
-   if (allowedExtensions.includes(fileExtension) && allowedMimeTypes.includes(mimeType)) {
+  const mimeType = file.mimetype;
+  if (allowedExtensions.includes(fileExtension) && allowedMimeTypes.includes(mimeType)) {
     cb(null, true);
   } else {
     cb(new Error('Only PDF, JPG, JPEG, and PNG files are allowed'), false);
@@ -101,6 +106,18 @@ router.post(
   submitActivityReport
 );
 
+router.post(
+  '/edit_activity',
+  validateEmpId,
+  editActivityReport
+);
+
+router.delete(
+  '/delete_activity',
+  validateEmpId,
+  deleteActivityReport
+);
+
 router.get(
   '/employee/activity',
   validateEmpId,
@@ -120,20 +137,37 @@ router.post(
   applyLeave
 );
 
+router.post(
+  '/edit_leave',
+  leaveUpload.single('leave_attachment'),
+  validateEmpId,
+  editLeaveApplication
+);
+
+router.delete(
+  '/delete_leave',
+  validateEmpId,
+  deleteLeaveApplication
+);
+
 router.get(
   '/leaves',
   validateEmpId,
   getEmployeeLeaves
 );
+
 router.get(
   '/leaves/range',
   validateEmpId,
   getEmployeeLeavesByDateRange
 );
+
 router.get(
   '/employee',
   validateEmpId,
   getEmployeeById
 );
 
+router.get('/fetch_leave', validateEmpId, getLeaveById);
+router.get('/fetch_activity', validateEmpId, getActivityById);
 module.exports = router;

@@ -35,7 +35,7 @@ const authenticateToken = async (req, res, next) => {
 
 const validateEmpId = (req, res, next) => {
   let emp_id;
-  if (req.method === 'GET') {
+  if (req.method === 'GET' || req.method == 'DELETE') {
     emp_id = req.query.emp_id; // Extract from query params for GET
   } else {
     emp_id = req.body.emp_id; // Extract from body for POST
