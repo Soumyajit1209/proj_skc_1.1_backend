@@ -681,13 +681,11 @@ const getActivityReportsByDateRange = async (req, res) => {
       'WHERE a.emp_id = ?';
     const params = [emp_id];
 
-    if (start_date && end_date) {
-      query += ' AND DATE(a.activity_datetime) BETWEEN ? AND ?';
-      params.push(start_date, end_date);
-    } else if (start_date) {
+    if (start_date) {
       query += ' AND DATE(a.activity_datetime) >= ?';
       params.push(start_date);
-    } else if (end_date) {
+    }
+    if (end_date) {
       query += ' AND DATE(a.activity_datetime) <= ?';
       params.push(end_date);
     }
@@ -1083,21 +1081,27 @@ const getEmployeeLeavesByDateRange = async (req, res) => {
     }
 
     // Build dynamic query based on date range
-    let query = 'SELECT la.*, em.full_name, a.username AS approved_by_username ' +
-      'FROM leave_applications la ' +
-      'LEFT JOIN employee_master em ON la.emp_id = em.emp_id ' +
-      'LEFT JOIN admin a ON la.approved_by = a.id ' +
-      'WHERE la.emp_id = ?';
+    let query = `SELECT
+                      la.*,
+                      em.full_name,
+                      a.username AS approved_by_username
+                  FROM
+                      leave_applications la
+                  LEFT JOIN employee_master em ON em.emp_id=la.emp_id
+                  LEFT JOIN admin a ON
+                      la.approved_by = a.id
+                  WHERE
+                    em.emp_id = ?`;
     const params = [emp_id];
 
     if (start_date && end_date) {
-      query += ' AND la.start_date BETWEEN ? AND ?';
+      query += ' AND DATE(la.application_datetime) >= ? AND DATE(la.application_datetime) <= ?';
       params.push(start_date, end_date);
     } else if (start_date) {
-      query += ' AND la.start_date >= ?';
+      query += ' AND DATE(la.application_datetime) >= ?';
       params.push(start_date);
     } else if (end_date) {
-      query += ' AND la.start_date <= ?';
+      query += ' AND DATE(la.application_datetime) <= ?';
       params.push(end_date);
     }
 
@@ -1216,23 +1220,27 @@ const getEmployeeById = async (req, res) => {
 
 // Export all controller functions
 module.exports = {
+  //employeeanagement
   recordInTime,
   recordOutTime,
   getDailyAttendance,
   getAttendanceByDateRange,
   checkInAttendance,
   checkOutAttendance,
+  //activity report
   submitActivityReport,
   editActivityReport,
   deleteActivityReport,
   getEmployeeActivityReports,
   getActivityReportsByDateRange,
   getActivityById,
+  //Leave management
   applyLeave,
   editLeaveApplication,
   deleteLeaveApplication,
   getEmployeeLeaves,
   getEmployeeLeavesByDateRange,
   getLeaveById,
+  //employee
   getEmployeeById
 };
