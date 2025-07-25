@@ -29,7 +29,7 @@ const {
 const router = express.Router();
 
 const attendanceStorage = multer.diskStorage({
-  destination: 'Uploads/selfies',
+  destination: 'uploads/selfies',
   filename: (req, file, cb) => {
     cb(null, `${Date.now()}-${file.originalname}`);
   },
@@ -37,7 +37,7 @@ const attendanceStorage = multer.diskStorage({
 
 const leaveStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = 'Uploads/leave_attachments';
+    const dir = 'uploads/leave_attachments';
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
