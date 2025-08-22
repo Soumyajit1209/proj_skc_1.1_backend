@@ -1,3 +1,4 @@
+//admin
 const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
@@ -88,6 +89,53 @@ const rejectAttendance = async (req, res) => {
     res.json({ message: 'Attendance rejected' });
   } catch (error) {
     console.error('Error rejecting attendance:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
+  }
+};
+
+/**
+ * Closes an attendance record for missing out-time with remarks.
+ * @param {Object} req - Express request object containing attendance ID and optional remarks.
+ * @param {Object} res - Express response object.
+ * @returns {JSON} Success message or error response.
+ */
+const closeAttendance = async (req, res) => {
+  const { attendance_id } = req.params;
+  const { remarks } = req.body;
+
+  try {
+    // Update attendance record to CLOSED with remarks
+    const [result] = await pool.query(
+      'UPDATE attendance_register SET in_status = ?, remarks = ? WHERE attendance_id = ?',
+      ['CLOSED', remarks || 'Closed without out-time', attendance_id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Attendance not found' });
+    }
+
+    res.json({ message: 'Attendance closed successfully' });
+  } catch (error) {
+    console.error('Error closing attendance:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
+  }
+};
+
+/**
+ * Retrieves list of employees who have pending out-time for the previous day.
+ * @param {Object} req - Express request object.
+ * @param {Object} res - Express response object.
+ * @returns {JSON} Array of pending attendance records with employee names.
+ */
+const getPendingOutAttendances = async (req, res) => {
+  try {
+    // Fetch attendance records for yesterday where in_time exists, out_time is null, and status is APPROVED
+    const [rows] = await pool.query(
+      'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY) AND ar.in_time IS NOT NULL AND ar.out_time IS NULL AND ar.in_status = "APPROVED"'
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching pending out attendances:', error);
     res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
@@ -908,6 +956,8 @@ const deleteActivityReport = async (req, res) => {
 module.exports = {
   getDailyAttendanceAll,
   rejectAttendance,
+  closeAttendance,
+  getPendingOutAttendances,
   getMonthlyAttendance,
   downloadDailyAttendance,
   downloadAttendanceByRange,

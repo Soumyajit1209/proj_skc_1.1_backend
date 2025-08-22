@@ -18,7 +18,11 @@ const {
   downloadLeaveApplications,
   getEmployeeAttendanceReport,
   downloadActivityReports,
-  deleteActivityReport
+  deleteActivityReport,
+  closeAttendance,
+  getPendingOutAttendances,
+  closeAttendance,
+  getPendingOutAttendances
 } = require('../controllers/adminController');
 
 const router = express.Router();
@@ -30,6 +34,9 @@ router.get('/attendance/monthly', authenticateToken, restrictTo('admin'), getMon
 router.get('/attendance/daily/download', authenticateToken, restrictTo('admin'), downloadDailyAttendance);
 router.get('/attendance/range/download', authenticateToken, restrictTo('admin'), downloadAttendanceByRange);
 router.get('/attendance/employee/:emp_id', authenticateToken, restrictTo('admin'), getEmployeeAttendanceReport);
+
+router.put('/attendance/:attendance_id/close', authenticateToken, restrictTo('admin'), closeAttendance);
+router.get('/attendance/pending-out', authenticateToken, restrictTo('admin'), getPendingOutAttendances);
 
 // Activity Reports
 router.get('/activity', authenticateToken, restrictTo('admin'), getActivityReports);

@@ -1,3 +1,4 @@
+//employee
 const pool = require('../config/db');
 const path = require('path');
 const fs = require('fs');
@@ -38,6 +39,16 @@ const recordInTime = async (req, res) => {
     }
     if (!employeeRows[0].is_active) {
       return res.status(403).json({ error: 'Employee account is inactive' });
+    }
+
+    // Check for previous day's pending out-time
+    const [prevAttendance] = await pool.query(
+      'SELECT * FROM attendance_register WHERE emp_id = ? AND attendance_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY)',
+      [emp_id]
+    );
+
+    if (prevAttendance.length > 0 && prevAttendance[0].out_time === null && prevAttendance[0].in_status !== 'CLOSED') {
+      return res.status(403).json({ error: 'Cannot record in-time. Previous day out-time is missing. Contact admin.' });
     }
 
     // Check for existing in-time record for today
