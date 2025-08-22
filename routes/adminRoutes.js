@@ -21,8 +21,6 @@ const {
   deleteActivityReport,
   closeAttendance,
   getPendingOutAttendances,
-  closeAttendance,
-  getPendingOutAttendances
 } = require('../controllers/adminController');
 
 const router = express.Router();
