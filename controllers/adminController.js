@@ -11,7 +11,7 @@ const fs = require('fs');
 // ==============================
 
 // Define upload directory and create it if it doesn't exist
-const uploadDir = 'Uploads/profile_picture';
+const uploadDir = 'uploads/profile_picture';
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
