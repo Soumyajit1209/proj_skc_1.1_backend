@@ -22,7 +22,8 @@ const {
   getActivityReportsByDateRange,
   getEmployeeLeavesByDateRange,
   getActivityById,
-  getLeaveById
+  getLeaveById,
+  getAllBranches
 
 } = require('../controllers/employeeController');
 
@@ -170,4 +171,5 @@ router.get(
 
 router.get('/fetch_leave', validateEmpId, getLeaveById);
 router.get('/fetch_activity', validateEmpId, getActivityById);
+router.get('/branches', getAllBranches);
 module.exports = router;

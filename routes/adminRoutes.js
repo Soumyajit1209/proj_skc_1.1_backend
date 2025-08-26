@@ -21,6 +21,7 @@ const {
   deleteActivityReport,
   closeAttendance,
   getPendingOutAttendances,
+  getAllBranches
 } = require('../controllers/adminController');
 
 const router = express.Router();
@@ -53,5 +54,8 @@ router.get('/leaves/employee/:emp_id', authenticateToken, restrictTo('admin'), g
 router.put('/leaves/:leave_id', authenticateToken, restrictTo('admin'), updateLeaveStatus);
 router.delete('/leaves/:leave_id', authenticateToken, restrictTo('admin'), deleteLeaveApplication);
 router.get('/leaves/download', authenticateToken, restrictTo('admin'), downloadLeaveApplications);
+//branches
+router.get('/branches', getAllBranches);
+
 
 module.exports = router;

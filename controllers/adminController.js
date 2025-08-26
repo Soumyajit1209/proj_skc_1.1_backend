@@ -5,6 +5,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const path = require('path');
 const fs = require('fs');
+const { get } = require('http');
 
 // ==============================
 // Multer Configuration for File Uploads
@@ -54,10 +55,15 @@ const upload = multer({
  */
 const getDailyAttendanceAll = async (req, res) => {
   try {
-    // Fetch attendance records for today with employee names
-    const [rows] = await pool.query(
-      'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = CURDATE()'
-    );
+    let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = CURDATE()';
+    let params = [];
+
+    if (!req.user.is_superadmin) {
+      query += ' AND em.branch_id = ?';
+      params.push(req.user.branch_id);
+    }
+
+    const [rows] = await pool.query(query, params);
     res.json(rows);
   } catch (error) {
     console.error('Error fetching daily attendance:', error);
@@ -76,7 +82,6 @@ const rejectAttendance = async (req, res) => {
   const { remarks } = req.body;
 
   try {
-    // Update attendance record to REJECTED with remarks
     const [result] = await pool.query(
       'UPDATE attendance_register SET in_status = ?, remarks = ? WHERE attendance_id = ?',
       ['REJECTED', remarks, attendance_id]
@@ -104,7 +109,6 @@ const closeAttendance = async (req, res) => {
   const { remarks } = req.body;
 
   try {
-    // Update attendance record to CLOSED with remarks
     const [result] = await pool.query(
       'UPDATE attendance_register SET in_status = ?, remarks = ? WHERE attendance_id = ?',
       ['CLOSED', remarks || 'Closed without out-time', attendance_id]
@@ -129,10 +133,15 @@ const closeAttendance = async (req, res) => {
  */
 const getPendingOutAttendances = async (req, res) => {
   try {
-    // Fetch attendance records for yesterday where in_time exists, out_time is null, and status is APPROVED
-    const [rows] = await pool.query(
-      'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY) AND ar.in_time IS NOT NULL AND ar.out_time IS NULL AND ar.in_status = "APPROVED"'
-    );
+    let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY) AND ar.in_time IS NOT NULL AND ar.out_time IS NULL AND ar.in_status = "APPROVED"';
+    let params = [];
+
+    if (!req.user.is_superadmin) {
+      query += ' AND em.branch_id = ?';
+      params.push(req.user.branch_id);
+    }
+
+    const [rows] = await pool.query(query, params);
     res.json(rows);
   } catch (error) {
     console.error('Error fetching pending out attendances:', error);
@@ -149,17 +158,20 @@ const getPendingOutAttendances = async (req, res) => {
 const getMonthlyAttendance = async (req, res) => {
   const { month, year } = req.query;
 
-  // Validate required query parameters
   if (!month || !year) {
     return res.status(400).json({ error: 'Month and year are required' });
   }
 
   try {
-    // Fetch attendance records for the specified month and year
-    const [rows] = await pool.query(
-      'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE MONTH(ar.attendance_date) = ? AND YEAR(ar.attendance_date) = ?',
-      [month, year]
-    );
+    let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE MONTH(ar.attendance_date) = ? AND YEAR(ar.attendance_date) = ?';
+    let params = [month, year];
+
+    if (!req.user.is_superadmin) {
+      query += ' AND em.branch_id = ?';
+      params.push(req.user.branch_id);
+    }
+
+    const [rows] = await pool.query(query, params);
     res.json(rows);
   } catch (error) {
     console.error('Error fetching monthly attendance:', error);
@@ -175,12 +187,16 @@ const getMonthlyAttendance = async (req, res) => {
  */
 const downloadDailyAttendance = async (req, res) => {
   try {
-    // Fetch daily attendance records
-    const [rows] = await pool.query(
-      'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = CURDATE()'
-    );
+    let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = CURDATE()';
+    let params = [];
 
-    // Map data for Excel export
+    if (!req.user.is_superadmin) {
+      query += ' AND em.branch_id = ?';
+      params.push(req.user.branch_id);
+    }
+
+    const [rows] = await pool.query(query, params);
+
     const data = rows.map(row => ({
       'Employee ID': row.emp_id,
       'Full Name': row.full_name,
@@ -199,13 +215,11 @@ const downloadDailyAttendance = async (req, res) => {
       'Remarks': row.remarks || ''
     }));
 
-    // Create Excel workbook and worksheet
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Daily Attendance');
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
 
-    // Set response headers for file download
     res.setHeader('Content-Disposition', 'attachment; filename=daily_attendance.xlsx');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buf);
@@ -224,19 +238,21 @@ const downloadDailyAttendance = async (req, res) => {
 const downloadAttendanceByRange = async (req, res) => {
   const { from_date, to_date } = req.query;
 
-  // Validate required query parameters
   if (!from_date || !to_date) {
     return res.status(400).json({ error: 'From date and to date are required' });
   }
 
   try {
-    // Fetch attendance records for the specified date range
-    const [rows] = await pool.query(
-      'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date BETWEEN ? AND ?',
-      [from_date, to_date]
-    );
+    let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date BETWEEN ? AND ?';
+    let params = [from_date, to_date];
 
-    // Map data for Excel export
+    if (!req.user.is_superadmin) {
+      query += ' AND em.branch_id = ?';
+      params.push(req.user.branch_id);
+    }
+
+    const [rows] = await pool.query(query, params);
+
     const data = rows.map(row => ({
       'Employee ID': row.emp_id,
       'Full Name': row.full_name,
@@ -255,13 +271,11 @@ const downloadAttendanceByRange = async (req, res) => {
       'Remarks': row.remarks || ''
     }));
 
-    // Create Excel workbook and worksheet
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Attendance Range');
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
 
-    // Set response headers for file download
     res.setHeader('Content-Disposition', `attachment; filename=attendance_${from_date}_to_${to_date}.xlsx`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buf);
@@ -281,29 +295,28 @@ const getEmployeeAttendanceReport = async (req, res) => {
   const { emp_id } = req.params;
   const { from_date, to_date } = req.query;
 
-  // Validate required query parameters
   if (!from_date || !to_date) {
     return res.status(400).json({ error: 'From date and to date are required' });
   }
 
   try {
-    // Fetch attendance records for the employee within the date range
+    const [employee] = await pool.query(
+      'SELECT emp_id, full_name, branch_id FROM employee_master WHERE emp_id = ?',
+      [emp_id]
+    );
+    if (!employee.length) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    if (!req.user.is_superadmin && req.user.branch_id !== employee[0].branch_id) {
+      return res.status(403).json({ error: 'Employee not in your branch' });
+    }
+
     const [attendanceRows] = await pool.query(
       'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.emp_id = ? AND ar.attendance_date BETWEEN ? AND ?',
       [emp_id, from_date, to_date]
     );
 
-    // Fetch employee details
-    const [employee] = await pool.query(
-      'SELECT emp_id, full_name FROM employee_master WHERE emp_id = ?',
-      [emp_id]
-    );
-
-    if (!employee.length) {
-      return res.status(404).json({ error: 'Employee not found' });
-    }
-
-    // Calculate attendance summary
     const startDate = new Date(from_date);
     const endDate = new Date(to_date);
     const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
@@ -337,33 +350,41 @@ const getEmployeeAttendanceReport = async (req, res) => {
  */
 const addEmployee = async (req, res) => {
   try {
-    // Handle file upload with Multer
     upload.single('profile_picture')(req, res, async (err) => {
       if (err) {
         return res.status(400).json({ error: err.message });
       }
 
-      const { full_name, phone_no, email_id, aadhaar_no, username, password, is_active } = req.body;
+      const { full_name, phone_no, email_id, aadhaar_no, username, password, is_active, branch_id } = req.body;
 
-      // Validate required fields
-      if (!full_name || !username || !password) {
-        return res.status(400).json({ error: 'Full name, username, and password are required' });
+      if (!req.user.is_superadmin && req.user.branch_id !== parseInt(branch_id)) {
+        return res.status(403).json({ error: 'Unauthorized: Can only add to your branch' });
+      }
+
+      if (!full_name || !username || !password || !branch_id) {
+        return res.status(400).json({ error: 'Full name, username, password, and branch_id are required' });
       }
 
       try {
-        // Check for existing username
-        const [existing] = await pool.query('SELECT emp_id FROM employee_master WHERE username = ?', [username]);
-        if (existing.length > 0) {
-          return res.status(400).json({ error: 'Username already exists' });
+        const [branchCheck] = await pool.query('SELECT branch_id FROM branches WHERE branch_id = ?', [branch_id]);
+        if (branchCheck.length === 0) {
+          return res.status(404).json({ error: 'Branch not found' });
         }
 
-        // Hash password and prepare profile picture path
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const profilePicturePath = req.file ? `/Uploads/profile_picture/${req.file.filename}` : null;
+        // Check for username uniqueness within the branch
+        const [existing] = await pool.query(
+          'SELECT emp_id FROM employee_master WHERE username = ? AND branch_id = ?',
+          [username, branch_id]
+        );
+        if (existing.length > 0) {
+          return res.status(400).json({ error: 'Username already exists in this branch' });
+        }
 
-        // Insert new employee
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const profilePicturePath = req.file ? `/uploads/profile_picture/${req.file.filename}` : null;
+
         const [result] = await pool.query(
-          'INSERT INTO employee_master (full_name, phone_no, email_id, aadhaar_no, username, password, profile_picture, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO employee_master (full_name, phone_no, email_id, aadhaar_no, username, password, profile_picture, branch_id, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [
             full_name,
             phone_no || null,
@@ -372,6 +393,7 @@ const addEmployee = async (req, res) => {
             username,
             hashedPassword,
             profilePicturePath,
+            branch_id,
             is_active !== undefined ? Number(is_active) : 1,
           ]
         );
@@ -386,7 +408,7 @@ const addEmployee = async (req, res) => {
     console.error('Unexpected error in addEmployee:', error);
     res.status(500).json({ error: 'Unexpected server error', details: error.message });
   }
-};
+}
 
 /**
  * Retrieves all employees from the database.
@@ -396,10 +418,15 @@ const addEmployee = async (req, res) => {
  */
 const getAllEmployees = async (req, res) => {
   try {
-    // Fetch all employee details
-    const [rows] = await pool.query(
-      'SELECT emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, is_active, created_at, updated_at FROM employee_master'
-    );
+    let query = 'SELECT emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, branch_id, is_active, created_at, updated_at FROM employee_master';
+    let params = [];
+
+    if (!req.user.is_superadmin) {
+      query += ' WHERE branch_id = ?';
+      params.push(req.user.branch_id);
+    }
+
+    const [rows] = await pool.query(query, params);
     res.json(rows);
   } catch (error) {
     console.error('Error fetching employees:', error);
@@ -415,52 +442,58 @@ const getAllEmployees = async (req, res) => {
  */
 const updateEmployee = async (req, res) => {
   try {
-    // Handle file upload with Multer
     upload.single('profile_picture')(req, res, async (err) => {
       if (err) {
         return res.status(400).json({ error: err.message });
       }
 
       const { emp_id } = req.params;
-      const { full_name, phone_no, email_id, aadhaar_no, username, password, is_active } = req.body;
+      const { full_name, phone_no, email_id, aadhaar_no, username, password, is_active, branch_id } = req.body;
 
-      // Validate required fields
-      if (!full_name || !username) {
-        return res.status(400).json({ error: 'Full name and username are required' });
+      if (!full_name || !username || !branch_id) {
+        return res.status(400).json({ error: 'Full name, username, and branch_id are required' });
       }
 
       try {
-        // Check if employee exists
         const [existing] = await pool.query('SELECT * FROM employee_master WHERE emp_id = ?', [emp_id]);
         if (existing.length === 0) {
           return res.status(404).json({ error: 'Employee not found' });
         }
 
-        // Check for username conflict
-        const [usernameCheck] = await pool.query(
-          'SELECT emp_id FROM employee_master WHERE username = ? AND emp_id != ?',
-          [username, emp_id]
-        );
-        if (usernameCheck.length > 0) {
-          return res.status(400).json({ error: 'Username already exists' });
+        if (!req.user.is_superadmin && req.user.branch_id !== existing[0].branch_id) {
+          return res.status(403).json({ error: 'Unauthorized: Can only update employees in your branch' });
         }
 
-        // Prepare update data
+        const [branchCheck] = await pool.query('SELECT branch_id FROM branches WHERE branch_id = ?', [branch_id]);
+        if (branchCheck.length === 0) {
+          return res.status(404).json({ error: 'Branch not found' });
+        }
+
+        // Check for username uniqueness within the branch (if username or branch_id changed)
+        if (username !== existing[0].username || branch_id !== existing[0].branch_id) {
+          const [usernameCheck] = await pool.query(
+            'SELECT emp_id FROM employee_master WHERE username = ? AND branch_id = ? AND emp_id != ?',
+            [username, branch_id, emp_id]
+          );
+          if (usernameCheck.length > 0) {
+            return res.status(400).json({ error: 'Username already exists in this branch' });
+          }
+        }
+
         const updateData = {
           full_name,
           phone_no: phone_no || null,
           email_id: email_id || null,
           aadhaar_no: aadhaar_no || null,
           username,
+          branch_id,
           is_active: is_active !== undefined ? Number(is_active) : existing[0].is_active,
         };
 
-        // Hash new password if provided
         if (password) {
           updateData.password = await bcrypt.hash(password, 10);
         }
 
-        // Handle profile picture update
         if (req.file) {
           if (existing[0].profile_picture) {
             const oldFilePath = path.join(__dirname, '..', existing[0].profile_picture);
@@ -468,12 +501,11 @@ const updateEmployee = async (req, res) => {
               fs.unlinkSync(oldFilePath);
             }
           }
-          updateData.profile_picture = `/Uploads/profile_picture/${req.file.filename}`;
+          updateData.profile_picture = `/uploads/profile_picture/${req.file.filename}`;
         }
 
-        // Update employee record
         await pool.query(
-          'UPDATE employee_master SET full_name = ?, phone_no = ?, email_id = ?, aadhaar_no = ?, username = ?, password = ?, profile_picture = ?, is_active = ? WHERE emp_id = ?',
+          'UPDATE employee_master SET full_name = ?, phone_no = ?, email_id = ?, aadhaar_no = ?, username = ?, password = ?, profile_picture = ?, branch_id = ?, is_active = ? WHERE emp_id = ?',
           [
             updateData.full_name,
             updateData.phone_no,
@@ -482,6 +514,7 @@ const updateEmployee = async (req, res) => {
             updateData.username,
             updateData.password || existing[0].password,
             updateData.profile_picture || existing[0].profile_picture,
+            updateData.branch_id,
             updateData.is_active,
             emp_id,
           ]
@@ -509,13 +542,15 @@ const deleteEmployee = async (req, res) => {
   const { emp_id } = req.params;
 
   try {
-    // Check if employee exists
-    const [existing] = await pool.query('SELECT emp_id FROM employee_master WHERE emp_id = ?', [emp_id]);
+    const [existing] = await pool.query('SELECT emp_id, branch_id FROM employee_master WHERE emp_id = ?', [emp_id]);
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    // Delete employee record
+    if (!req.user.is_superadmin && req.user.branch_id !== existing[0].branch_id) {
+      return res.status(403).json({ error: 'Unauthorized: Can only delete employees in your branch' });
+    }
+
     const [result] = await pool.query('DELETE FROM employee_master WHERE emp_id = ?', [emp_id]);
 
     if (result.affectedRows === 0) {
@@ -541,19 +576,24 @@ const deleteEmployee = async (req, res) => {
  */
 const getAllLeaveApplications = async (req, res) => {
   try {
-    // Fetch all leave applications with employee and admin details
-    const [rows] = await pool.query(
-      'SELECT la.*, em.full_name, a.username AS approved_by_username ' +
+    let query = 'SELECT la.*, em.full_name, a.username AS approved_by_username ' +
       'FROM leave_applications la ' +
       'JOIN employee_master em ON la.emp_id = em.emp_id ' +
-      'LEFT JOIN admin a ON la.approved_by = a.id'
-    );
+      'LEFT JOIN admin a ON la.approved_by = a.id';
+    let params = [];
+
+    if (!req.user.is_superadmin) {
+      query += ' WHERE em.branch_id = ?';
+      params.push(req.user.branch_id);
+    }
+
+    const [rows] = await pool.query(query, params);
     res.json(rows);
   } catch (error) {
     console.error('Error fetching all leave applications:', error);
     res.status(500).json({ error: 'Server error', details: error.message });
   }
-};
+}
 
 /**
  * Retrieves leave applications for a specific employee.
@@ -565,7 +605,15 @@ const getEmployeeLeaveApplications = async (req, res) => {
   const { emp_id } = req.params;
 
   try {
-    // Fetch leave applications for the specified employee
+    const [employee] = await pool.query('SELECT branch_id FROM employee_master WHERE emp_id = ?', [emp_id]);
+    if (employee.length === 0) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    if (!req.user.is_superadmin && req.user.branch_id !== employee[0].branch_id) {
+      return res.status(403).json({ error: 'Employee not in your branch' });
+    }
+
     const [rows] = await pool.query(
       'SELECT la.*, em.full_name, a.username AS approved_by_username ' +
       'FROM leave_applications la ' +
@@ -596,25 +644,23 @@ const updateLeaveStatus = async (req, res) => {
   const { leave_id } = req.params;
   const { status } = req.body;
 
-  // Validate status
   if (!['APPROVED', 'REJECTED'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status. Must be APPROVED or REJECTED' });
   }
 
   try {
-    // Verify admin exists
-    const [admin] = await pool.query('SELECT id, username FROM admin WHERE id = ?', [req.user.id]);
-    if (admin.length === 0) {
-      return res.status(403).json({ error: 'Unauthorized: Admin not found' });
-    }
-
-    // Check if leave application exists
-    const [existing] = await pool.query('SELECT * FROM leave_applications WHERE leave_id = ?', [leave_id]);
-    if (existing.length === 0) {
+    const [leaveRows] = await pool.query(
+      'SELECT la.leave_id, la.emp_id, em.branch_id FROM leave_applications la JOIN employee_master em ON la.emp_id = em.emp_id WHERE la.leave_id = ?',
+      [leave_id]
+    );
+    if (leaveRows.length === 0) {
       return res.status(404).json({ error: 'Leave application not found' });
     }
 
-    // Update leave status
+    if (!req.user.is_superadmin && req.user.branch_id !== leaveRows[0].branch_id) {
+      return res.status(403).json({ error: 'Leave application not in your branch' });
+    }
+
     const [result] = await pool.query(
       'UPDATE leave_applications SET status = ?, approved_by = ?, approved_on = CURRENT_TIMESTAMP WHERE leave_id = ?',
       [status, req.user.id, leave_id]
@@ -640,39 +686,20 @@ const updateLeaveStatus = async (req, res) => {
 const deleteLeaveApplication = async (req, res) => {
   const { leave_id } = req.params;
 
-  console.log('deleteLeaveApplication - leave_id:', leave_id);
-
-  // Validate required parameter
-  if (!leave_id) {
-    return res.status(400).json({ error: 'Leave ID is required' });
-  }
-
   try {
-    // Check if leave application exists
     const [leaveRows] = await pool.query(
-      'SELECT leave_id, leave_attachment FROM leave_applications WHERE leave_id = ?',
+      'SELECT la.leave_id, em.branch_id FROM leave_applications la JOIN employee_master em ON la.emp_id = em.emp_id WHERE la.leave_id = ?',
       [leave_id]
     );
-
-    console.log('deleteLeaveApplication - Leave check:', leaveRows);
-
     if (leaveRows.length === 0) {
       return res.status(404).json({ error: 'Leave application not found' });
     }
 
-    // Delete attachment file if it exists
-    if (leaveRows[0].leave_attachment) {
-      const filePath = path.join(__dirname, '..', leaveRows[0].leave_attachment);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
+    if (!req.user.is_superadmin && req.user.branch_id !== leaveRows[0].branch_id) {
+      return res.status(403).json({ error: 'Leave application not in your branch' });
     }
 
-    // Delete leave application
-    const [result] = await pool.query(
-      'DELETE FROM leave_applications WHERE leave_id = ?',
-      [leave_id]
-    );
+    const [result] = await pool.query('DELETE FROM leave_applications WHERE leave_id = ?', [leave_id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Leave application not found' });
@@ -680,7 +707,7 @@ const deleteLeaveApplication = async (req, res) => {
 
     res.status(200).json({ message: 'Leave application deleted successfully' });
   } catch (error) {
-    console.error('deleteLeaveApplication - Error:', error.message, error.stack);
+    console.error('Error deleting leave application:', error);
     res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
@@ -816,12 +843,20 @@ const getActivityReports = async (req, res) => {
   const { date } = req.query;
 
   try {
-    // Build query based on date filter
-    const query = date
-      ? 'SELECT a.*, em.full_name FROM activities a JOIN employee_master em ON a.emp_id = em.emp_id WHERE DATE(a.activity_datetime) = ?'
-      : 'SELECT a.*, em.full_name FROM activities a JOIN employee_master em ON a.emp_id = em.emp_id';
-    const [rows] = await pool.query(query, date ? [date] : []);
+    let query = 'SELECT a.*, em.full_name FROM activities a JOIN employee_master em ON a.emp_id = em.emp_id';
+    let params = [];
 
+    if (!req.user.is_superadmin) {
+      query += ' WHERE em.branch_id = ?';
+      params.push(req.user.branch_id);
+    }
+
+    if (date) {
+      query = query.replace('WHERE', 'WHERE DATE(a.activity_datetime) = ? AND') || query + ' WHERE DATE(a.activity_datetime) = ?';
+      params.push(date);
+    }
+
+    const [rows] = await pool.query(query, params);
     res.json(rows);
   } catch (error) {
     console.error('Error fetching activity reports:', error);
@@ -952,6 +987,16 @@ const deleteActivityReport = async (req, res) => {
   }
 };
 
+const getAllBranches = async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT branch_id, branch_name FROM branches ORDER BY branch_name ASC');
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching branches:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
+  }
+}
+
 // Export all controller functions
 module.exports = {
   getDailyAttendanceAll,
@@ -973,5 +1018,6 @@ module.exports = {
   downloadLeaveApplications,
   getActivityReports,
   downloadActivityReports,
-  deleteActivityReport
+  deleteActivityReport,
+  getAllBranches
 };

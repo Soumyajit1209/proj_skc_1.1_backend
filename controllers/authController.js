@@ -4,31 +4,32 @@ const nodemailer = require('nodemailer');
 const pool = require('../config/db');
 require('dotenv').config();
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.ethereal.email',
   port: 587,
   auth: {
-    user: 'your_smtp_user',
-    pass: 'your_smtp_password',
+    user: process.env.SMTP_USER || 'your_smtp_user',
+    pass: process.env.SMTP_PASS || 'your_smtp_password',
   },
 });
 
 const login = async (req, res) => {
   console.log('Request body:', req.body);
 
-  if (!req.body || !req.body.username || !req.body.password || !req.body.role) {
-    return res.status(400).json({ error: 'Missing username, password, or role in request body' });
+  if (!req.body || !req.body.username || !req.body.password || !req.body.role || !req.body.branch_name) {
+    return res.status(400).json({ error: 'Missing username, password, role, or branch_name in request body' });
   }
 
-  const { username, password, role } = req.body;
+  const { username, password, role, branch_name } = req.body;
+
   try {
     const table = role === 'admin' ? 'admin' : 'employee_master';
     const idField = role === 'admin' ? 'id' : 'emp_id';
     const fields = role === 'admin'
-      ? 'id, username, password'
-      : 'emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, password, is_active, created_at, updated_at';
+      ? 'id, username, password, branch_id, is_superadmin'
+      : 'emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, password, branch_id, is_active, created_at, updated_at';
 
     const [rows] = await pool.query(`SELECT ${fields} FROM ${table} WHERE username = ?`, [username]);
     const user = rows[0];
@@ -41,6 +42,21 @@ const login = async (req, res) => {
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) return res.status(400).json({ error: 'Invalid password' });
 
+    // Branch validation
+    const [branches] = await pool.query('SELECT branch_id FROM branches WHERE branch_name = ?', [branch_name]);
+    if (branches.length === 0) {
+      return res.status(400).json({ error: 'Invalid branch name' });
+    }
+    const branch_id = branches[0].branch_id;
+
+    if (role === 'admin' && !user.is_superadmin && user.branch_id !== branch_id) {
+      return res.status(403).json({ error: 'Branch mismatch for admin' });
+    }
+
+    if (role === 'employee' && user.branch_id !== branch_id) {
+      return res.status(403).json({ error: 'Branch mismatch for employee' });
+    }
+
     if (role === 'employee' && !user.is_active) {
       return res.status(403).json({ error: 'Employee account is inactive' });
     }
@@ -48,15 +64,18 @@ const login = async (req, res) => {
     const userData = { ...user };
     delete userData.password;
 
-    if (role === 'admin') {
-      const token = jwt.sign({ id: user[idField], role }, JWT_SECRET, { expiresIn: '4h' });
-      res.json({ token, role, user: userData });
-    } else {
-      res.json({ role, user: userData });
-    }
+    const tokenPayload = {
+      id: user[idField],
+      role,
+      branch_id: user.branch_id,
+      is_superadmin: role === 'admin' ? user.is_superadmin : false,
+    };
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '4h' });
+
+    res.json({ token, role, user: userData });
   } catch (error) {
     console.error('Error in login:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
 
@@ -64,6 +83,7 @@ const changePassword = async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   const id = req.user?.id || req.employee?.id;
   const role = req.user?.role || req.employee?.role;
+
   if (!id || !role) {
     return res.status(400).json({ error: 'User not authenticated' });
   }
@@ -83,49 +103,75 @@ const changePassword = async (req, res) => {
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
     console.error('Error in changePassword:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
 
 const changePasswordbyEmployee = async (req, res) => {
-  const { emp_id, oldPassword, newPassword } = req.body;
+  const { emp_id, oldPassword, newPassword, branch_name } = req.body;
 
-  if (!emp_id || !oldPassword || !newPassword) {
-    return res.status(400).json({ error: 'Employee ID, old password, and new password are required' });
+  if (!emp_id || !oldPassword || !newPassword || !branch_name) {
+    return res.status(400).json({ error: 'Employee ID, old password, new password, and branch_name are required' });
   }
 
   try {
+    const [branches] = await pool.query('SELECT branch_id FROM branches WHERE branch_name = ?', [branch_name]);
+    if (branches.length === 0) {
+      return res.status(400).json({ error: 'Invalid branch name' });
+    }
+    const branch_id = branches[0].branch_id;
+
     const [rows] = await pool.query(
-      'SELECT password FROM employee_master WHERE emp_id = ?',
-      [emp_id]
+      'SELECT password, branch_id FROM employee_master WHERE emp_id = ? AND branch_id = ?',
+      [emp_id, branch_id]
     );
     const user = rows[0];
-    if (!user) return res.status(404).json({ error: 'Employee not found' });
+    if (!user) return res.status(404).json({ error: 'Employee not found in the specified branch' });
 
     const validPassword = await bcrypt.compare(oldPassword, user.password);
     if (!validPassword) return res.status(400).json({ error: 'Invalid old password' });
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await pool.query(
-      'UPDATE employee_master SET password = ? WHERE emp_id = ?',
-      [hashedPassword, emp_id]
+      'UPDATE employee_master SET password = ? WHERE emp_id = ? AND branch_id = ?',
+      [hashedPassword, emp_id, branch_id]
     );
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
-    console.error('Error in changePassword:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error in changePasswordbyEmployee:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
 
 const forgotPassword = async (req, res) => {
-  const { email, role } = req.body;
+  const { email, role, branch_name } = req.body;
+
+  if (!email || !role || !branch_name) {
+    return res.status(400).json({ error: 'Email, role, and branch_name are required' });
+  }
+
   try {
     const table = role === 'admin' ? 'admin' : 'employee_master';
-    const emailField = role === 'admin' ? 'username' : 'email_id';
+    const emailField = role === 'admin' ? 'email_id' : 'email_id';
     const idField = role === 'admin' ? 'id' : 'emp_id';
-    const [rows] = await pool.query(`SELECT ${idField} FROM ${table} WHERE ${emailField} = ?`, [email]);
+    const fields = role === 'admin' ? 'id, email_id, branch_id, is_superadmin' : 'emp_id, email_id, branch_id';
+
+    const [branches] = await pool.query('SELECT branch_id FROM branches WHERE branch_name = ?', [branch_name]);
+    if (branches.length === 0) {
+      return res.status(400).json({ error: 'Invalid branch name' });
+    }
+    const branch_id = branches[0].branch_id;
+
+    const [rows] = await pool.query(
+      `SELECT ${idField}, ${emailField}, branch_id FROM ${table} WHERE ${emailField} = ?` + (role === 'employee' ? ' AND branch_id = ?' : ''),
+      role === 'employee' ? [email, branch_id] : [email]
+    );
     const user = rows[0];
     if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (role === 'admin' && !user.is_superadmin && user.branch_id !== branch_id) {
+      return res.status(403).json({ error: 'Branch mismatch for admin' });
+    }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
@@ -143,13 +189,24 @@ const forgotPassword = async (req, res) => {
     res.json({ message: 'OTP sent to email' });
   } catch (error) {
     console.error('Error in forgotPassword:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
 
 const resetPassword = async (req, res) => {
-  const { otp, newPassword, role } = req.body;
+  const { otp, newPassword, role, branch_name } = req.body;
+
+  if (!otp || !newPassword || !role || !branch_name) {
+    return res.status(400).json({ error: 'OTP, new password, role, and branch_name are required' });
+  }
+
   try {
+    const [branches] = await pool.query('SELECT branch_id FROM branches WHERE branch_name = ?', [branch_name]);
+    if (branches.length === 0) {
+      return res.status(400).json({ error: 'Invalid branch name' });
+    }
+    const branch_id = branches[0].branch_id;
+
     const [rows] = await pool.query(
       'SELECT * FROM password_reset_tokens WHERE otp = ? AND role = ? AND expires_at > NOW()',
       [otp, role]
@@ -159,13 +216,27 @@ const resetPassword = async (req, res) => {
 
     const table = role === 'admin' ? 'admin' : 'employee_master';
     const idField = role === 'admin' ? 'id' : 'emp_id';
+    const [userRows] = await pool.query(
+      `SELECT branch_id, is_superadmin FROM ${table} WHERE ${idField} = ?`,
+      [resetRecord.user_id]
+    );
+    const user = userRows[0];
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (role === 'admin' && !user.is_superadmin && user.branch_id !== branch_id) {
+      return res.status(403).json({ error: 'Branch mismatch for admin' });
+    }
+    if (role === 'employee' && user.branch_id !== branch_id) {
+      return res.status(403).json({ error: 'Branch mismatch for employee' });
+    }
+
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     await pool.query(`UPDATE ${table} SET password = ? WHERE ${idField} = ?`, [hashedPassword, resetRecord.user_id]);
     await pool.query('DELETE FROM password_reset_tokens WHERE otp = ?', [otp]);
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
     console.error('Error in resetPassword:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
 

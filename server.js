@@ -3,6 +3,7 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const superadminRoutes = require('./routes/superadminRoutes');
 const cookieParser = require('cookie-parser');
 require('dotenv').config();
 const app = express();
@@ -40,6 +41,7 @@ app.use('/uploads', express.static('uploads'));
 app.use('/api', authRoutes);
 app.use('/api', employeeRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/superadmin', superadminRoutes);
 
 
 

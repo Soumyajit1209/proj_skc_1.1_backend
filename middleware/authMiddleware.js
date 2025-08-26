@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 
-const JWT_SECRET = "acb6ebcf5cd7b331a5e3b7ea4397c3b1ee1367bfc924102f8dc5f191f213ee19dc2cae4dc2d7f4338aa0f441df483fb3bbcea9b4248b70489a9078f6acb218cc";
+const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
 const resetEmployee = (req, res, next) => {
   req.employee = null;
@@ -22,23 +22,38 @@ const authenticateToken = async (req, res, next) => {
   }
 
   try {
-    const user = await new Promise((resolve, reject) => {
-      jwt.verify(tokenToVerify, JWT_SECRET, (err, decoded) => (err ? reject(err) : resolve(decoded)));
-    });
-    req.user = user;
+    const user = jwt.verify(tokenToVerify, JWT_SECRET);
+
+    if (user.role === 'admin') {
+      req.user = {
+        id: user.id,
+        role: user.role,
+        branch_id: user.branch_id,
+        is_superadmin: user.is_superadmin || false,
+      };
+    } else if (user.role === 'employee') {
+      req.employee = {
+        id: user.id,
+        role: user.role,
+        branch_id: user.branch_id,
+      };
+    } else {
+      return res.status(403).json({ error: 'Invalid role in token' });
+    }
+
     next();
   } catch (err) {
     console.error('Token verification error:', err.message);
-    return res.status(403).json({ error: 'Invalid token' });
+    return res.status(403).json({ error: 'Invalid or expired token' });
   }
 };
 
-const validateEmpId = (req, res, next) => {
+const validateEmpId = async (req, res, next) => {
   let emp_id;
-  if (req.method === 'GET' || req.method == 'DELETE') {
-    emp_id = req.query.emp_id; // Extract from query params for GET
+  if (req.method === 'GET' || req.method === 'DELETE') {
+    emp_id = req.query.emp_id;
   } else {
-    emp_id = req.body.emp_id; // Extract from body for POST
+    emp_id = req.body.emp_id;
   }
 
   console.log('validateEmpId - emp_id:', emp_id, 'method:', req.method, 'url:', req.originalUrl);
@@ -48,51 +63,37 @@ const validateEmpId = (req, res, next) => {
   }
 
   const empIdNum = parseInt(emp_id);
-  if (isNaN(empIdNum)) {
+  if (isNaN(empIdNum) || empIdNum <= 0) {
     return res.status(400).json({ error: 'Employee ID must be a valid number' });
   }
 
-  req.employee = { id: empIdNum };
-  next();
+  try {
+    const [rows] = await pool.query('SELECT emp_id, branch_id FROM employee_master WHERE emp_id = ?', [empIdNum]);
+    const employee = rows[0];
+    if (!employee) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    if (req.user && !req.user.is_superadmin && req.user.branch_id !== employee.branch_id) {
+      return res.status(403).json({ error: 'Employee does not belong to your branch' });
+    }
+
+    req.employee = { id: empIdNum, branch_id: employee.branch_id };
+    next();
+  } catch (error) {
+    console.error('Error in validateEmpId:', error);
+    return res.status(500).json({ error: 'Server error during employee validation' });
+  }
 };
-
-// const validateEmpId = (req, res, next) => {
-//   try {
-//     console.log('Request body:', req.body); // Debug log
-//     console.log('Request file:', req.file); // Debug log
-
-//     if (!req.body || !req.body.emp_id) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Employee ID is required',
-//       });
-//     }
-
-//     const empId = req.body.emp_id;
-//     // Add validation logic (e.g., check if empId is valid)
-//     if (isNaN(empId) || empId <= 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Invalid Employee ID',
-//       });
-//     }
-
-//     // Example: Attach empId to request for use in controller
-//     req.employee = { emp_id: empId };
-//     next();
-//   } catch (error) {
-//     console.error('Error in validateEmpId:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Server error during validation',
-//     });
-//   }
-// };
-
 
 const restrictTo = (...roles) => {
   return (req, res, next) => {
     const userRole = req.user?.role || req.employee?.role;
+
+    if (req.user?.is_superadmin && userRole === 'admin') {
+      return next();
+    }
+
     if (!userRole || !roles.includes(userRole)) {
       return res.status(403).json({ error: 'Access denied' });
     }

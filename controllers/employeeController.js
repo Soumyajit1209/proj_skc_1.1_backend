@@ -18,22 +18,15 @@ const recordInTime = async (req, res) => {
   const in_picture = req.file ? req.file.path : null;
   const emp_id = req.employee?.id;
 
-  console.log('recordInTime - emp_id:', emp_id, 'body:', req.body);
-
-  // Validate employee ID
   if (!emp_id) {
     return res.status(400).json({ error: 'Employee ID is required' });
   }
 
   try {
-    // Check if employee exists and is active
     const [employeeRows] = await pool.query(
-      'SELECT emp_id, is_active FROM employee_master WHERE emp_id = ?',
+      'SELECT emp_id, is_active, branch_id FROM employee_master WHERE emp_id = ?',
       [emp_id]
     );
-
-    console.log('recordInTime - Employee check:', employeeRows);
-
     if (employeeRows.length === 0) {
       return res.status(404).json({ error: 'Employee not found' });
     }
@@ -41,7 +34,10 @@ const recordInTime = async (req, res) => {
       return res.status(403).json({ error: 'Employee account is inactive' });
     }
 
-    // Check for previous day's pending out-time
+    if (req.employee.branch_id !== employeeRows[0].branch_id) {
+      return res.status(403).json({ error: 'Branch mismatch' });
+    }
+
     const [prevAttendance] = await pool.query(
       'SELECT * FROM attendance_register WHERE emp_id = ? AND attendance_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY)',
       [emp_id]
@@ -51,7 +47,6 @@ const recordInTime = async (req, res) => {
       return res.status(403).json({ error: 'Cannot record in-time. Previous day out-time is missing. Contact admin.' });
     }
 
-    // Check for existing in-time record for today
     const [existing] = await pool.query(
       'SELECT attendance_id FROM attendance_register WHERE emp_id = ? AND attendance_date = CURDATE()',
       [emp_id]
@@ -61,7 +56,6 @@ const recordInTime = async (req, res) => {
       return res.status(400).json({ error: 'In-time already recorded for today' });
     }
 
-    // Insert new attendance record
     const [result] = await pool.query(
       `INSERT INTO attendance_register (
         emp_id, attendance_date, in_time, in_location, in_latitude, in_longitude, 
@@ -80,7 +74,7 @@ const recordInTime = async (req, res) => {
 
     res.status(201).json({ attendance_id: result.insertId, message: 'In-time recorded successfully' });
   } catch (error) {
-    console.error('recordInTime - Error:', error.message, error.stack);
+    console.error('Error recording in-time:', error);
     res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
@@ -1228,6 +1222,17 @@ const getEmployeeById = async (req, res) => {
     res.status(500).json({ error: 'Server error', details: error.message });
   }
 };
+// ==============================
+// Branches
+const getAllBranches = async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT branch_id, branch_name FROM branches ORDER BY branch_name ASC');
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching branches:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
+  }
+}
 
 // Export all controller functions
 module.exports = {
@@ -1253,5 +1258,7 @@ module.exports = {
   getEmployeeLeavesByDateRange,
   getLeaveById,
   //employee
-  getEmployeeById
+  getEmployeeById,
+  //branches
+  getAllBranches
 };
