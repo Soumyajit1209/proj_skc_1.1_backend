@@ -9,6 +9,7 @@ const resetEmployee = (req, res, next) => {
 };
 
 const authenticateToken = async (req, res, next) => {
+
   const authHeader = req.headers['authorization'];
   if (authHeader && !authHeader.startsWith('Bearer ')) {
     return res.status(400).json({ error: 'Invalid Authorization header format. Use Bearer token' });
@@ -31,12 +32,6 @@ const authenticateToken = async (req, res, next) => {
       };
     } else if (user.role === 'admin') {
       req.user = {
-        id: user.id,
-        role: user.role,
-        branch_id: user.branch_id,
-      };
-    } else if (user.role === 'employee') {
-      req.employee = {
         id: user.id,
         role: user.role,
         branch_id: user.branch_id,
@@ -80,7 +75,7 @@ const validateEmpId = async (req, res, next) => {
       return res.status(403).json({ error: 'Employee does not belong to your branch' });
     }
 
-    req.employee = { id: empIdNum, branch_id: employee.branch_id };
+    req.employee = { id: empIdNum, branch_id: employee.branch_id, role: 'employee' };
     next();
   } catch (error) {
     console.error('Error in validateEmpId:', error);
