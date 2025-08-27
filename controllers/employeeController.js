@@ -1,4 +1,4 @@
-//employee
+
 const pool = require('../config/db');
 const path = require('path');
 const fs = require('fs');

@@ -24,12 +24,16 @@ const authenticateToken = async (req, res, next) => {
   try {
     const user = jwt.verify(tokenToVerify, JWT_SECRET);
 
-    if (user.role === 'admin') {
+    if (user.role === 'superadmin') {
+      req.user = {
+        id: user.id,
+        role: user.role,
+      };
+    } else if (user.role === 'admin') {
       req.user = {
         id: user.id,
         role: user.role,
         branch_id: user.branch_id,
-        is_superadmin: user.is_superadmin || false,
       };
     } else if (user.role === 'employee') {
       req.employee = {
@@ -56,8 +60,6 @@ const validateEmpId = async (req, res, next) => {
     emp_id = req.body.emp_id;
   }
 
-  console.log('validateEmpId - emp_id:', emp_id, 'method:', req.method, 'url:', req.originalUrl);
-
   if (!emp_id) {
     return res.status(400).json({ error: 'Employee ID is required' });
   }
@@ -74,7 +76,7 @@ const validateEmpId = async (req, res, next) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    if (req.user && !req.user.is_superadmin && req.user.branch_id !== employee.branch_id) {
+    if (req.user && req.user.role !== 'superadmin' && req.user.branch_id !== employee.branch_id) {
       return res.status(403).json({ error: 'Employee does not belong to your branch' });
     }
 
@@ -89,10 +91,6 @@ const validateEmpId = async (req, res, next) => {
 const restrictTo = (...roles) => {
   return (req, res, next) => {
     const userRole = req.user?.role || req.employee?.role;
-
-    if (req.user?.is_superadmin && userRole === 'admin') {
-      return next();
-    }
 
     if (!userRole || !roles.includes(userRole)) {
       return res.status(403).json({ error: 'Access denied' });

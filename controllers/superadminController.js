@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const addBranch = async (req, res) => {
   const { branch_name } = req.body;
 
-  if (!req.user.is_superadmin) {
+  if (req.user.role !== 'superadmin') {
     return res.status(403).json({ error: 'Unauthorized: Superadmin only' });
   }
 
@@ -29,7 +29,7 @@ const addBranch = async (req, res) => {
 const addAdminToBranch = async (req, res) => {
   const { username, password, email_id, branch_id } = req.body;
 
-  if (!req.user.is_superadmin) {
+  if (req.user.role !== 'superadmin') {
     return res.status(403).json({ error: 'Unauthorized: Superadmin only' });
   }
 
@@ -55,7 +55,7 @@ const addAdminToBranch = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const [result] = await pool.query(
-      'INSERT INTO admin (username, password, email_id, branch_id, is_superadmin) VALUES (?, ?, ?, ?, 0)',
+      'INSERT INTO admin (username, password, email_id, branch_id) VALUES (?, ?, ?, ?)',
       [username, hashedPassword, email_id || null, branch_id]
     );
 
@@ -66,4 +66,31 @@ const addAdminToBranch = async (req, res) => {
   }
 };
 
-module.exports = { addBranch, addAdminToBranch };
+const addSuperadmin = async (req, res) => {
+  const { username, password, email_id } = req.body;
+
+  if (req.user.role !== 'superadmin') {
+    return res.status(403).json({ error: 'Unauthorized: Superadmin only' });
+  }
+
+  try {
+    // Check if superadmin already exists
+    const [existing] = await pool.query('SELECT id FROM superadmin WHERE id = 1');
+    if (existing.length > 0) {
+      return res.status(400).json({ error: 'Superadmin already exists. Only one superadmin is allowed.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const [result] = await pool.query(
+      'INSERT INTO superadmin (id, username, password, email_id) VALUES (1, ?, ?, ?)',
+      [username, hashedPassword, email_id || null]
+    );
+
+    res.status(201).json({ id: result.insertId, message: 'Superadmin created successfully' });
+  } catch (error) {
+    console.error('Add superadmin error:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
+  }
+};
+
+module.exports = { addBranch, addAdminToBranch, addSuperadmin };

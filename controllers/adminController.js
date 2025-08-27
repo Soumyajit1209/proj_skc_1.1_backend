@@ -1,23 +1,19 @@
-//admin
 const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const path = require('path');
 const fs = require('fs');
-const { get } = require('http');
 
 // ==============================
 // Multer Configuration for File Uploads
 // ==============================
 
-// Define upload directory and create it if it doesn't exist
 const uploadDir = 'uploads/profile_picture';
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Configure Multer storage for profile picture uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
@@ -28,7 +24,6 @@ const storage = multer.diskStorage({
   },
 });
 
-// Multer middleware for file upload with validation
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
@@ -47,18 +42,12 @@ const upload = multer({
 // Attendance Management
 // ==============================
 
-/**
- * Retrieves daily attendance for all employees for the current day.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @returns {JSON} Array of attendance records with employee names.
- */
 const getDailyAttendanceAll = async (req, res) => {
   try {
     let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = CURDATE()';
     let params = [];
 
-    if (!req.user.is_superadmin) {
+    if (req.user.role !== 'superadmin') {
       query += ' AND em.branch_id = ?';
       params.push(req.user.branch_id);
     }
@@ -71,12 +60,6 @@ const getDailyAttendanceAll = async (req, res) => {
   }
 };
 
-/**
- * Rejects an attendance record with remarks.
- * @param {Object} req - Express request object containing attendance ID and remarks.
- * @param {Object} res - Express response object.
- * @returns {JSON} Success message or error response.
- */
 const rejectAttendance = async (req, res) => {
   const { attendance_id } = req.params;
   const { remarks } = req.body;
@@ -98,12 +81,6 @@ const rejectAttendance = async (req, res) => {
   }
 };
 
-/**
- * Closes an attendance record for missing out-time with remarks.
- * @param {Object} req - Express request object containing attendance ID and optional remarks.
- * @param {Object} res - Express response object.
- * @returns {JSON} Success message or error response.
- */
 const closeAttendance = async (req, res) => {
   const { attendance_id } = req.params;
   const { remarks } = req.body;
@@ -125,18 +102,12 @@ const closeAttendance = async (req, res) => {
   }
 };
 
-/**
- * Retrieves list of employees who have pending out-time for the previous day.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @returns {JSON} Array of pending attendance records with employee names.
- */
 const getPendingOutAttendances = async (req, res) => {
   try {
     let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY) AND ar.in_time IS NOT NULL AND ar.out_time IS NULL AND ar.in_status = "APPROVED"';
     let params = [];
 
-    if (!req.user.is_superadmin) {
+    if (req.user.role !== 'superadmin') {
       query += ' AND em.branch_id = ?';
       params.push(req.user.branch_id);
     }
@@ -149,12 +120,6 @@ const getPendingOutAttendances = async (req, res) => {
   }
 };
 
-/**
- * Retrieves monthly attendance for all employees.
- * @param {Object} req - Express request object containing month and year.
- * @param {Object} res - Express response object.
- * @returns {JSON} Array of attendance records for the specified month and year.
- */
 const getMonthlyAttendance = async (req, res) => {
   const { month, year } = req.query;
 
@@ -166,7 +131,7 @@ const getMonthlyAttendance = async (req, res) => {
     let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE MONTH(ar.attendance_date) = ? AND YEAR(ar.attendance_date) = ?';
     let params = [month, year];
 
-    if (!req.user.is_superadmin) {
+    if (req.user.role !== 'superadmin') {
       query += ' AND em.branch_id = ?';
       params.push(req.user.branch_id);
     }
@@ -179,18 +144,12 @@ const getMonthlyAttendance = async (req, res) => {
   }
 };
 
-/**
- * Generates and downloads an Excel file of daily attendance for all employees.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @returns {Buffer} Excel file containing daily attendance data.
- */
 const downloadDailyAttendance = async (req, res) => {
   try {
     let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = CURDATE()';
     let params = [];
 
-    if (!req.user.is_superadmin) {
+    if (req.user.role !== 'superadmin') {
       query += ' AND em.branch_id = ?';
       params.push(req.user.branch_id);
     }
@@ -229,12 +188,6 @@ const downloadDailyAttendance = async (req, res) => {
   }
 };
 
-/**
- * Generates and downloads an Excel file of attendance records for a date range.
- * @param {Object} req - Express request object containing from_date and to_date.
- * @param {Object} res - Express response object.
- * @returns {Buffer} Excel file containing attendance data for the specified range.
- */
 const downloadAttendanceByRange = async (req, res) => {
   const { from_date, to_date } = req.query;
 
@@ -246,7 +199,7 @@ const downloadAttendanceByRange = async (req, res) => {
     let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date BETWEEN ? AND ?';
     let params = [from_date, to_date];
 
-    if (!req.user.is_superadmin) {
+    if (req.user.role !== 'superadmin') {
       query += ' AND em.branch_id = ?';
       params.push(req.user.branch_id);
     }
@@ -285,12 +238,6 @@ const downloadAttendanceByRange = async (req, res) => {
   }
 };
 
-/**
- * Generates an attendance report for a specific employee within a date range.
- * @param {Object} req - Express request object containing emp_id, from_date, and to_date.
- * @param {Object} res - Express response object.
- * @returns {JSON} Employee details, attendance records, and summary (total, present, absent days).
- */
 const getEmployeeAttendanceReport = async (req, res) => {
   const { emp_id } = req.params;
   const { from_date, to_date } = req.query;
@@ -308,7 +255,7 @@ const getEmployeeAttendanceReport = async (req, res) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    if (!req.user.is_superadmin && req.user.branch_id !== employee[0].branch_id) {
+    if (req.user.role !== 'superadmin' && req.user.branch_id !== employee[0].branch_id) {
       return res.status(403).json({ error: 'Employee not in your branch' });
     }
 
@@ -342,12 +289,6 @@ const getEmployeeAttendanceReport = async (req, res) => {
 // Employee Management
 // ==============================
 
-/**
- * Adds a new employee with profile picture upload and password hashing.
- * @param {Object} req - Express request object containing employee details and optional profile picture.
- * @param {Object} res - Express response object.
- * @returns {JSON} Success message with employee ID or error response.
- */
 const addEmployee = async (req, res) => {
   try {
     upload.single('profile_picture')(req, res, async (err) => {
@@ -357,7 +298,7 @@ const addEmployee = async (req, res) => {
 
       const { full_name, phone_no, email_id, aadhaar_no, username, password, is_active, branch_id } = req.body;
 
-      if (!req.user.is_superadmin && req.user.branch_id !== parseInt(branch_id)) {
+      if (req.user.role !== 'superadmin' && req.user.branch_id !== parseInt(branch_id)) {
         return res.status(403).json({ error: 'Unauthorized: Can only add to your branch' });
       }
 
@@ -371,7 +312,6 @@ const addEmployee = async (req, res) => {
           return res.status(404).json({ error: 'Branch not found' });
         }
 
-        // Check for username uniqueness within the branch
         const [existing] = await pool.query(
           'SELECT emp_id FROM employee_master WHERE username = ? AND branch_id = ?',
           [username, branch_id]
@@ -408,20 +348,14 @@ const addEmployee = async (req, res) => {
     console.error('Unexpected error in addEmployee:', error);
     res.status(500).json({ error: 'Unexpected server error', details: error.message });
   }
-}
+};
 
-/**
- * Retrieves all employees from the database.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @returns {JSON} Array of employee records.
- */
 const getAllEmployees = async (req, res) => {
   try {
     let query = 'SELECT emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, branch_id, is_active, created_at, updated_at FROM employee_master';
     let params = [];
 
-    if (!req.user.is_superadmin) {
+    if (req.user.role !== 'superadmin') {
       query += ' WHERE branch_id = ?';
       params.push(req.user.branch_id);
     }
@@ -434,12 +368,6 @@ const getAllEmployees = async (req, res) => {
   }
 };
 
-/**
- * Updates an employee's details, including optional profile picture and password.
- * @param {Object} req - Express request object containing employee ID and updated details.
- * @param {Object} res - Express response object.
- * @returns {JSON} Success message or error response.
- */
 const updateEmployee = async (req, res) => {
   try {
     upload.single('profile_picture')(req, res, async (err) => {
@@ -460,7 +388,7 @@ const updateEmployee = async (req, res) => {
           return res.status(404).json({ error: 'Employee not found' });
         }
 
-        if (!req.user.is_superadmin && req.user.branch_id !== existing[0].branch_id) {
+        if (req.user.role !== 'superadmin' && req.user.branch_id !== existing[0].branch_id) {
           return res.status(403).json({ error: 'Unauthorized: Can only update employees in your branch' });
         }
 
@@ -469,7 +397,6 @@ const updateEmployee = async (req, res) => {
           return res.status(404).json({ error: 'Branch not found' });
         }
 
-        // Check for username uniqueness within the branch (if username or branch_id changed)
         if (username !== existing[0].username || branch_id !== existing[0].branch_id) {
           const [usernameCheck] = await pool.query(
             'SELECT emp_id FROM employee_master WHERE username = ? AND branch_id = ? AND emp_id != ?',
@@ -532,12 +459,6 @@ const updateEmployee = async (req, res) => {
   }
 };
 
-/**
- * Deletes an employee from the database.
- * @param {Object} req - Express request object containing employee ID.
- * @param {Object} res - Express response object.
- * @returns {JSON} Success message or error response.
- */
 const deleteEmployee = async (req, res) => {
   const { emp_id } = req.params;
 
@@ -547,7 +468,7 @@ const deleteEmployee = async (req, res) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    if (!req.user.is_superadmin && req.user.branch_id !== existing[0].branch_id) {
+    if (req.user.role !== 'superadmin' && req.user.branch_id !== existing[0].branch_id) {
       return res.status(403).json({ error: 'Unauthorized: Can only delete employees in your branch' });
     }
 
@@ -568,12 +489,6 @@ const deleteEmployee = async (req, res) => {
 // Leave Management
 // ==============================
 
-/**
- * Retrieves all leave applications from the database.
- * @param {Object} req - Express request object.
- * @param {Object} res - Express response object.
- * @returns {JSON} Array of leave applications with employee and admin details.
- */
 const getAllLeaveApplications = async (req, res) => {
   try {
     let query = 'SELECT la.*, em.full_name, a.username AS approved_by_username ' +
@@ -582,7 +497,7 @@ const getAllLeaveApplications = async (req, res) => {
       'LEFT JOIN admin a ON la.approved_by = a.id';
     let params = [];
 
-    if (!req.user.is_superadmin) {
+    if (req.user.role !== 'superadmin') {
       query += ' WHERE em.branch_id = ?';
       params.push(req.user.branch_id);
     }
@@ -593,14 +508,8 @@ const getAllLeaveApplications = async (req, res) => {
     console.error('Error fetching all leave applications:', error);
     res.status(500).json({ error: 'Server error', details: error.message });
   }
-}
+};
 
-/**
- * Retrieves leave applications for a specific employee.
- * @param {Object} req - Express request object containing employee ID.
- * @param {Object} res - Express response object.
- * @returns {JSON} Array of leave applications for the employee.
- */
 const getEmployeeLeaveApplications = async (req, res) => {
   const { emp_id } = req.params;
 
@@ -610,7 +519,7 @@ const getEmployeeLeaveApplications = async (req, res) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    if (!req.user.is_superadmin && req.user.branch_id !== employee[0].branch_id) {
+    if (req.user.role !== 'superadmin' && req.user.branch_id !== employee[0].branch_id) {
       return res.status(403).json({ error: 'Employee not in your branch' });
     }
 
@@ -634,12 +543,6 @@ const getEmployeeLeaveApplications = async (req, res) => {
   }
 };
 
-/**
- * Updates the status of a leave application (APPROVED or REJECTED).
- * @param {Object} req - Express request object containing leave ID and new status.
- * @param {Object} res - Express response object.
- * @returns {JSON} Success message or error response.
- */
 const updateLeaveStatus = async (req, res) => {
   const { leave_id } = req.params;
   const { status } = req.body;
@@ -657,7 +560,7 @@ const updateLeaveStatus = async (req, res) => {
       return res.status(404).json({ error: 'Leave application not found' });
     }
 
-    if (!req.user.is_superadmin && req.user.branch_id !== leaveRows[0].branch_id) {
+    if (req.user.role !== 'superadmin' && req.user.branch_id !== leaveRows[0].branch_id) {
       return res.status(403).json({ error: 'Leave application not in your branch' });
     }
 
@@ -677,12 +580,6 @@ const updateLeaveStatus = async (req, res) => {
   }
 };
 
-/**
- * Deletes a leave application and its associated attachment.
- * @param {Object} req - Express request object containing leave ID.
- * @param {Object} res - Express response object.
- * @returns {JSON} Success message or error response.
- */
 const deleteLeaveApplication = async (req, res) => {
   const { leave_id } = req.params;
 
@@ -695,7 +592,7 @@ const deleteLeaveApplication = async (req, res) => {
       return res.status(404).json({ error: 'Leave application not found' });
     }
 
-    if (!req.user.is_superadmin && req.user.branch_id !== leaveRows[0].branch_id) {
+    if (req.user.role !== 'superadmin' && req.user.branch_id !== leaveRows[0].branch_id) {
       return res.status(403).json({ error: 'Leave application not in your branch' });
     }
 
@@ -712,17 +609,10 @@ const deleteLeaveApplication = async (req, res) => {
   }
 };
 
-/**
- * Generates and downloads an Excel file of leave applications with optional filters.
- * @param {Object} req - Express request object containing optional status and date range filters.
- * @param {Object} res - Express response object.
- * @returns {Buffer} Excel file containing leave application data.
- */
 const downloadLeaveApplications = async (req, res) => {
   const { status, fromDate, toDate, from_date, to_date } = req.query;
 
   try {
-    // Build dynamic query based on filters
     let query = 
       'SELECT la.*, em.full_name, a.username AS approved_by_username ' +
       'FROM leave_applications la ' +
@@ -732,17 +622,14 @@ const downloadLeaveApplications = async (req, res) => {
     let params = [];
     let whereConditions = [];
 
-    // Apply status filter
     if (status && status !== 'ALL') {
       whereConditions.push('la.status = ?');
       params.push(status);
     }
 
-    // Normalize date parameters
     const startDate = fromDate || from_date;
     const endDate = toDate || to_date;
 
-    // Apply date range filters
     if (startDate && endDate) {
       whereConditions.push('DATE(la.application_datetime) BETWEEN ? AND ?');
       params.push(startDate, endDate);
@@ -754,16 +641,19 @@ const downloadLeaveApplications = async (req, res) => {
       params.push(endDate);
     }
 
+    if (req.user.role !== 'superadmin') {
+      whereConditions.push('em.branch_id = ?');
+      params.push(req.user.branch_id);
+    }
+
     if (whereConditions.length > 0) {
       query += ' WHERE ' + whereConditions.join(' AND ');
     }
 
     query += ' ORDER BY la.application_datetime DESC';
 
-    // Fetch leave applications
     const [rows] = await pool.query(query, params);
 
-    // Map data for Excel export
     const data = rows.map(row => ({
       'Leave ID': row.leave_id,
       'Employee ID': row.emp_id,
@@ -780,12 +670,10 @@ const downloadLeaveApplications = async (req, res) => {
       'Approved On': row.approved_on || ''
     }));
 
-    // Create Excel workbook and worksheet
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Leave Applications');
 
-    // Add filter info sheet if filters are applied
     if (status || startDate || endDate) {
       const filterInfo = [];
       if (status && status !== 'ALL') {
@@ -803,7 +691,6 @@ const downloadLeaveApplications = async (req, res) => {
 
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
 
-    // Generate dynamic filename
     let filename = 'leave_applications';
     if (status && status !== 'ALL') {
       filename += `_${status.toLowerCase()}`;
@@ -819,7 +706,6 @@ const downloadLeaveApplications = async (req, res) => {
     }
     filename += '.xlsx';
 
-    // Set response headers for file download
     res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buf);
@@ -833,12 +719,6 @@ const downloadLeaveApplications = async (req, res) => {
 // Activity Management
 // ==============================
 
-/**
- * Retrieves activity reports, optionally filtered by date.
- * @param {Object} req - Express request object containing optional date filter.
- * @param {Object} res - Express response object.
- * @returns {JSON} Array of activity reports with employee names.
- */
 const getActivityReports = async (req, res) => {
   const { date } = req.query;
 
@@ -846,7 +726,7 @@ const getActivityReports = async (req, res) => {
     let query = 'SELECT a.*, em.full_name FROM activities a JOIN employee_master em ON a.emp_id = em.emp_id';
     let params = [];
 
-    if (!req.user.is_superadmin) {
+    if (req.user.role !== 'superadmin') {
       query += ' WHERE em.branch_id = ?';
       params.push(req.user.branch_id);
     }
@@ -864,41 +744,37 @@ const getActivityReports = async (req, res) => {
   }
 };
 
-/**
- * Generates and downloads an Excel file of activity reports with optional date range filters.
- * @param {Object} req - Express request object containing optional from_date and to_date.
- * @param {Object} res - Express response object.
- * @returns {Buffer} Excel file containing activity report data.
- */
 const downloadActivityReports = async (req, res) => {
   const { from_date, to_date } = req.query;
 
   try {
-    // Build dynamic query based on date range
     let query = 'SELECT a.*, em.full_name FROM activities a JOIN employee_master em ON a.emp_id = em.emp_id';
     let params = [];
     let filename = 'activity_reports';
 
+    if (req.user.role !== 'superadmin') {
+      query += ' WHERE em.branch_id = ?';
+      params.push(req.user.branch_id);
+    }
+
     if (from_date && to_date) {
-      query += ' WHERE DATE(a.activity_datetime) BETWEEN ? AND ?';
+      query += (params.length > 0 ? ' AND' : ' WHERE') + ' DATE(a.activity_datetime) BETWEEN ? AND ?';
       params.push(from_date, to_date);
       filename += `_from_${from_date}_to_${to_date}`;
     } else if (from_date) {
-      query += ' WHERE DATE(a.activity_datetime) >= ?';
+      query += (params.length > 0 ? ' AND' : ' WHERE') + ' DATE(a.activity_datetime) >= ?';
       params.push(from_date);
       filename += `_from_${from_date}`;
     } else if (to_date) {
-      query += ' WHERE DATE(a.activity_datetime) <= ?';
+      query += (params.length > 0 ? ' AND' : ' WHERE') + ' DATE(a.activity_datetime) <= ?';
       params.push(to_date);
       filename += `_to_${to_date}`;
     }
 
     query += ' ORDER BY a.activity_datetime DESC';
 
-    // Fetch activity reports
     const [rows] = await pool.query(query, params);
 
-    // Map data for Excel export
     const data = rows.map(row => ({
       'Activity ID': row.activity_id,
       'Employee ID': row.emp_id,
@@ -911,12 +787,10 @@ const downloadActivityReports = async (req, res) => {
       'Longitude': row.longitude || ''
     }));
 
-    // Create Excel workbook and worksheet
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Activity Reports');
 
-    // Add filter info sheet if filters are applied
     if (from_date || to_date) {
       const filterInfo = [];
       if (from_date) {
@@ -931,7 +805,6 @@ const downloadActivityReports = async (req, res) => {
 
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
 
-    // Set response headers for file download
     res.setHeader('Content-Disposition', `attachment; filename=${filename}.xlsx`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buf);
@@ -941,36 +814,19 @@ const downloadActivityReports = async (req, res) => {
   }
 };
 
-/**
- * Deletes an activity report from the database.
- * @param {Object} req - Express request object containing activity ID.
- * @param {Object} res - Express response object.
- * @returns {JSON} Success message or error response.
- */
 const deleteActivityReport = async (req, res) => {
   const { activity_id } = req.params;
 
-  console.log('deleteActivityReport - activity_id:', activity_id);
-
-  // Validate required parameter
-  if (!activity_id) {
-    return res.status(400).json({ error: 'Activity ID is required' });
-  }
-
   try {
-    // Check if activity exists
     const [activityRows] = await pool.query(
       'SELECT activity_id FROM activities WHERE activity_id = ?',
       [activity_id]
     );
 
-    console.log('deleteActivityReport - Activity check:', activityRows);
-
     if (activityRows.length === 0) {
       return res.status(404).json({ error: 'Activity not found' });
     }
 
-    // Delete activity report
     const [result] = await pool.query(
       'DELETE FROM activities WHERE activity_id = ?',
       [activity_id]
@@ -995,9 +851,8 @@ const getAllBranches = async (req, res) => {
     console.error('Error fetching branches:', error);
     res.status(500).json({ error: 'Server error', details: error.message });
   }
-}
+};
 
-// Export all controller functions
 module.exports = {
   getDailyAttendanceAll,
   rejectAttendance,
