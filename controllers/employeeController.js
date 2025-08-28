@@ -1203,10 +1203,11 @@ const getEmployeeById = async (req, res) => {
   }
 
   try {
-    // Fetch employee details
     const [rows] = await pool.query(
-      'SELECT emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, is_active, created_at, updated_at ' +
-      'FROM employee_master WHERE emp_id = ?',
+      'SELECT e.emp_id, e.full_name, e.phone_no, e.email_id, e.aadhaar_no, e.profile_picture, e.username, e.is_active, e.branch_id, e.created_at, e.updated_at, b.branch_name ' +
+      'FROM employee_master e ' +
+      'LEFT JOIN branches b ON e.branch_id = b.branch_id ' +
+      'WHERE e.emp_id = ?',
       [emp_id]
     );
 

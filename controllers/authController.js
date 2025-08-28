@@ -65,37 +65,41 @@ const superadminLogin = async (req, res) => {
 };
 
 const login = async (req, res) => {
+  console.log('Request body:', req.body);
+
   if (!req.body) {
-    console.error('Request body is missing or invalid');
     return res.status(400).json({ error: 'Request body is missing or invalid' });
   }
 
-  const { username, password, role, branch_name, emp_id } = req.body;
-  console.log('Received login request:', { username, role, branch_name, emp_id });
+  let { username, password, role, branch_id, branch_name } = req.body;
 
-  if (role === 'employee' && (!emp_id || !password)) {
-    return res.status(400).json({ error: 'Employee ID and password are required for employee login' });
-  }
-  if (role !== 'employee' && (!username || !password || !role || !branch_name)) {
-    return res.status(400).json({ error: 'Missing username, password, role, or branch_name in request body' });
+  if (!username || !password || !role || (!branch_id && !branch_name)) {
+    return res.status(400).json({ error: 'Missing username, password, role, or both branch_id and branch_name' });
   }
 
   try {
-    if (role === 'employee') {
-      const empIdNum = parseInt(emp_id);
-      if (isNaN(empIdNum) || empIdNum <= 0) {
-        return res.status(400).json({ error: 'Employee ID must be a valid number' });
+    // If branch_name is provided instead of branch_id, fetch branch_id from branch table
+    if (!branch_id && branch_name) {
+      console.log('Querying branch for branch_name:', branch_name);
+      const [branchRows] = await pool.query('SELECT branch_id FROM branches WHERE branch_name = ?', [branch_name]);
+      console.log('Branch query result:', branchRows);
+      const branch = branchRows[0];
+      if (!branch) {
+        return res.status(400).json({ error: 'Invalid branch_name' });
       }
+      branch_id = branch.branch_id;
+    }
 
-      console.log('Querying employee for emp_id:', empIdNum);
+    if (role === 'employee') {
+      console.log('Querying employee for username:', username);
       const [rows] = await pool.query(
-        'SELECT emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, password, branch_id, is_active, created_at, updated_at FROM employee_master WHERE emp_id = ?',
-        [empIdNum]
+        'SELECT emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, password, branch_id, is_active, created_at, updated_at FROM employee_master WHERE username = ? AND branch_id = ?',
+        [username, branch_id]
       );
       console.log('Employee query result:', rows);
       const employee = rows[0];
       if (!employee) {
-        return res.status(400).json({ error: 'Invalid employee ID' });
+        return res.status(400).json({ error: 'Invalid username or branch_id' });
       }
 
       const validPassword = await bcrypt.compare(password, employee.password);
@@ -119,51 +123,34 @@ const login = async (req, res) => {
       ? 'id, username, password, branch_id'
       : 'emp_id, full_name, phone_no, email_id, aadhaar_no, profile_picture, username, password, branch_id, is_active, created_at, updated_at';
 
-    console.log('Querying branches for branch_name:', branch_name);
-    const [branches] = await pool.query('SELECT branch_id FROM branches WHERE branch_name = ?', [branch_name]);
-    console.log('Branches query result:', branches);
-    if (branches.length === 0) {
-      return res.status(400).json({ error: 'Invalid branch name' });
-    }
-    const branch_id = branches[0].branch_id;
-
     console.log('Querying user:', { table, username, branch_id });
     const [rows] = await pool.query(`SELECT ${fields} FROM ${table} WHERE username = ? AND branch_id = ?`, [username, branch_id]);
     console.log('User query result:', rows);
     const user = rows[0];
-    if (!user) return res.status(400).json({ error: 'Invalid username or branch mismatch' });
+    if (!user) return res.status(400).json({ error: 'Invalid username or branch_id mismatch' });
+
+    if (!user.password || user.password.length < 30) {
+      return res.status(500).json({ error: 'Stored password is not hashed. Please reset your password.' });
+    }
 
     const validPassword = await bcrypt.compare(password, user.password);
-    console.log('Password match:', validPassword);
     if (!validPassword) return res.status(400).json({ error: 'Invalid password' });
 
     const userData = { ...user };
     delete userData.password;
 
-    const tokenPayload = {
-      id: user[idField],
-      username: user.username,
-      role,
-      branch_id: user.branch_id,
-    };
-    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '4h' });
-    console.log('Generated JWT for admin:', token);
-
-    // Verify token immediately
-    try {
-      jwt.verify(token, JWT_SECRET);
-      console.log('Token verification successful for admin');
-    } catch (err) {
-      console.error('Immediate token verification failed for admin:', err.message);
-      return res.status(500).json({ error: 'Failed to generate valid token' });
+    if (role === 'admin') {
+      const token = jwt.sign({ id: user[idField], role, branch_id }, JWT_SECRET, { expiresIn: '4h' });
+      res.json({ token, role, user: userData });
+    } else {
+      res.json({ role, user: userData });
     }
-
-    res.json({ token, role, user: userData });
   } catch (error) {
     console.error('Error in login:', error);
-    res.status(500).json({ error: 'Server error', details: error.message });
+    res.status(500).json({ error: 'Server error' });
   }
 };
+
 
 const changePassword = async (req, res) => {
   const { old_password, new_password } = req.body;

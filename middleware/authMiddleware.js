@@ -48,15 +48,23 @@ const authenticateToken = async (req, res, next) => {
 };
 
 const validateEmpId = async (req, res, next) => {
-  let emp_id;
+  let emp_id, branch_name, branch_id;
   if (req.method === 'GET' || req.method === 'DELETE') {
     emp_id = req.query.emp_id;
+    branch_name = req.query.branch_name;
+    branch_id = req.query.branch_id;
   } else {
     emp_id = req.body.emp_id;
+    branch_name = req.body.branch_name;
+    branch_id = req.body.branch_id;
   }
 
   if (!emp_id) {
     return res.status(400).json({ error: 'Employee ID is required' });
+  }
+
+  if (!branch_name && !branch_id) {
+    return res.status(400).json({ error: 'Either branch name or branch ID is required' });
   }
 
   const empIdNum = parseInt(emp_id);
@@ -65,14 +73,29 @@ const validateEmpId = async (req, res, next) => {
   }
 
   try {
-    const [rows] = await pool.query('SELECT emp_id, branch_id FROM employee_master WHERE emp_id = ?', [empIdNum]);
-    const employee = rows[0];
-    if (!employee) {
-      return res.status(404).json({ error: 'Employee not found' });
+    let finalBranchId;
+    if (branch_id) {
+      const branchIdNum = parseInt(branch_id);
+      if (isNaN(branchIdNum) || branchIdNum <= 0) {
+        return res.status(400).json({ error: 'Branch ID must be a valid number' });
+      }
+      finalBranchId = branchIdNum;
+      console.log('Using provided branch_id:', finalBranchId);
+    } else if (branch_name) {
+      console.log('Querying branches for branch_name:', branch_name);
+      const [branches] = await pool.query('SELECT branch_id FROM branches WHERE branch_name = ?', [branch_name]);
+      console.log('Branches query result:', branches);
+      if (branches.length === 0) {
+        return res.status(400).json({ error: 'Invalid branch name' });
+      }
+      finalBranchId = branches[0].branch_id;
     }
 
-    if (req.user && req.user.role !== 'superadmin' && req.user.branch_id !== employee.branch_id) {
-      return res.status(403).json({ error: 'Employee does not belong to your branch' });
+    console.log('Querying employee for emp_id:', empIdNum, 'and branch_id:', finalBranchId);
+    const [rows] = await pool.query('SELECT emp_id, branch_id FROM employee_master WHERE emp_id = ? AND branch_id = ?', [empIdNum, finalBranchId]);
+    const employee = rows[0];
+    if (!employee) {
+      return res.status(404).json({ error: 'Employee not found or does not belong to the specified branch' });
     }
 
     req.employee = { id: empIdNum, branch_id: employee.branch_id, role: 'employee' };
