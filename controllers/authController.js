@@ -81,13 +81,24 @@ const login = async (req, res) => {
     // If branch_name is provided instead of branch_id, fetch branch_id from branch table
     if (!branch_id && branch_name) {
       console.log('Querying branch for branch_name:', branch_name);
-      const [branchRows] = await pool.query('SELECT branch_id FROM branches WHERE branch_name = ?', [branch_name]);
+      const [branchRows] = await pool.query('SELECT branch_id, branch_name FROM branches WHERE branch_name = ?', [branch_name]);
       console.log('Branch query result:', branchRows);
       const branch = branchRows[0];
       if (!branch) {
         return res.status(400).json({ error: 'Invalid branch_name' });
       }
       branch_id = branch.branch_id;
+      branch_name = branch.branch_name; // Ensure branch_name is set
+    } else {
+      // Fetch branch_name if only branch_id is provided
+      console.log('Querying branch for branch_id:', branch_id);
+      const [branchRows] = await pool.query('SELECT branch_name FROM branches WHERE branch_id = ?', [branch_id]);
+      console.log('Branch query result:', branchRows);
+      const branch = branchRows[0];
+      if (!branch) {
+        return res.status(400).json({ error: 'Invalid branch_id' });
+      }
+      branch_name = branch.branch_name;
     }
 
     if (role === 'employee') {
@@ -112,7 +123,7 @@ const login = async (req, res) => {
         return res.status(403).json({ error: 'Employee account is inactive' });
       }
 
-      const employeeData = { ...employee };
+      const employeeData = { ...employee, branch_name };
       delete employeeData.password;
       return res.json({ role: 'employee', user: employeeData });
     }
@@ -136,7 +147,7 @@ const login = async (req, res) => {
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) return res.status(400).json({ error: 'Invalid password' });
 
-    const userData = { ...user };
+    const userData = { ...user, branch_name };
     delete userData.password;
 
     if (role === 'admin') {
@@ -150,7 +161,6 @@ const login = async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 };
-
 
 const changePassword = async (req, res) => {
   const { old_password, new_password } = req.body;
