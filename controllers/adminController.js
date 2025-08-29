@@ -298,7 +298,7 @@ const addEmployee = async (req, res) => {
 
       const { full_name, phone_no, email_id, aadhaar_no, username, password, is_active, branch_id } = req.body;
 
-      if (req.user.role !== 'admin' && req.user.branch_id !== parseInt(branch_id)) {
+      if (req.user.role !== 'superadmin' && req.user.branch_id !== parseInt(branch_id)) {
         return res.status(403).json({ error: 'Unauthorized: Can only add to your branch' });
       }
 
