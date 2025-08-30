@@ -81,36 +81,78 @@ const rejectAttendance = async (req, res) => {
   }
 };
 
+
 const closeAttendance = async (req, res) => {
   const { attendance_id } = req.params;
   const { remarks } = req.body;
 
   try {
-    const [result] = await pool.query(
-      'UPDATE attendance_register SET in_status = ?, remarks = ? WHERE attendance_id = ?',
-      ['CLOSED', remarks || 'Closed without out-time', attendance_id]
+    // Check if attendance record exists and get employee details
+    const [attendanceRecord] = await pool.query(
+      'SELECT ar.*, em.branch_id, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_id = ?',
+      [attendance_id]
     );
 
-    if (result.affectedRows === 0) {
+    if (attendanceRecord.length === 0) {
       return res.status(404).json({ error: 'Attendance not found' });
     }
 
-    res.json({ message: 'Attendance closed successfully' });
+    // Check branch access for non-superadmin
+    if (req.user.role !== 'superadmin' && req.user.branch_id !== attendanceRecord[0].branch_id) {
+      return res.status(403).json({ error: 'Attendance record not in your branch' });
+    }
+
+    // Set remarks to ADMIN_VERIFIED
+    const finalRemarks = remarks || 'ADMIN_VERIFIED';
+
+    // Update attendance record with ADMIN_VERIFIED in remarks (no status change)
+    const [result] = await pool.query(
+      'UPDATE attendance_register SET remarks = ? WHERE attendance_id = ?',
+      [finalRemarks, attendance_id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Failed to update attendance record' });
+    }
+
+    // Log the action for audit purposes
+    console.log(`Admin ${req.user.id} updated attendance ${attendance_id} for employee ${attendanceRecord[0].emp_id} (${attendanceRecord[0].full_name}) with remarks: ${finalRemarks}`);
+
+    res.json({ 
+      message: 'Attendance verified successfully',
+      details: {
+        employee_id: attendanceRecord[0].emp_id,
+        employee_name: attendanceRecord[0].full_name,
+        attendance_date: attendanceRecord[0].attendance_date,
+        verified_by: req.user.username || req.user.id,
+        verified_at: new Date().toISOString(),
+        verification_status: 'ADMIN_VERIFIED'
+      }
+    });
+
   } catch (error) {
-    console.error('Error closing attendance:', error);
-    res.status(500).json({ error: 'Server error', details: error.message });
+    console.error('Error verifying attendance:', error);
+    res.status(500).json({ 
+      error: 'Server error', 
+      details: error.message,
+      message: 'Failed to verify attendance. Please try again.'
+    });
   }
 };
 
 const getPendingOutAttendances = async (req, res) => {
   try {
-    let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id WHERE ar.attendance_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY) AND ar.in_time IS NOT NULL AND ar.out_time IS NULL AND ar.in_status = "APPROVED"';
+    let query = 'SELECT ar.*, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id ' +
+                'WHERE ar.attendance_date < CURDATE() AND ar.in_time IS NOT NULL AND ar.out_time IS NULL AND ar.in_status = "APPROVED" ' +
+                'AND (ar.remarks IS NULL OR ar.remarks NOT LIKE "%ADMIN_VERIFIED%")';
     let params = [];
 
     if (req.user.role !== 'superadmin') {
       query += ' AND em.branch_id = ?';
       params.push(req.user.branch_id);
     }
+
+    query += ' ORDER BY ar.attendance_date DESC';
 
     const [rows] = await pool.query(query, params);
     res.json(rows);

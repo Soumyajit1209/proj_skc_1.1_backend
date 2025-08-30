@@ -23,13 +23,16 @@ const recordInTime = async (req, res) => {
   }
 
   try {
+    // Validate employee
     const [employeeRows] = await pool.query(
-      'SELECT emp_id, is_active, branch_id FROM employee_master WHERE emp_id = ?',
+      'SELECT emp_id, is_active, branch_id, full_name FROM employee_master WHERE emp_id = ?',
       [emp_id]
     );
+    
     if (employeeRows.length === 0) {
       return res.status(404).json({ error: 'Employee not found' });
     }
+    
     if (!employeeRows[0].is_active) {
       return res.status(403).json({ error: 'Employee account is inactive' });
     }
@@ -38,15 +41,7 @@ const recordInTime = async (req, res) => {
       return res.status(403).json({ error: 'Branch mismatch' });
     }
 
-    const [prevAttendance] = await pool.query(
-      'SELECT * FROM attendance_register WHERE emp_id = ? AND attendance_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY)',
-      [emp_id]
-    );
-
-    if (prevAttendance.length > 0 && prevAttendance[0].out_time === null && prevAttendance[0].in_status !== 'CLOSED') {
-      return res.status(403).json({ error: 'Cannot record in-time. Previous day out-time is missing. Contact admin.' });
-    }
-
+    // Check if today's attendance already exists
     const [existing] = await pool.query(
       'SELECT attendance_id FROM attendance_register WHERE emp_id = ? AND attendance_date = CURDATE()',
       [emp_id]
@@ -56,6 +51,38 @@ const recordInTime = async (req, res) => {
       return res.status(400).json({ error: 'In-time already recorded for today' });
     }
 
+    // Check previous day attendance
+    const [prevAttendance] = await pool.query(
+    'SELECT ar.*, em.branch_id, em.full_name FROM attendance_register ar JOIN employee_master em ON ar.emp_id = em.emp_id ' +
+    'WHERE ar.emp_id = ? AND ar.attendance_date < CURDATE() ORDER BY ar.attendance_date DESC LIMIT 1',
+    [emp_id]
+  );
+
+    // If previous day attendance exists, check for missing out-time
+    if (prevAttendance.length > 0) {
+      const prevRecord = prevAttendance[0];
+      
+      // If out_time is missing, check for ADMIN_VERIFIED in remarks
+      if (prevRecord.out_time === null) {
+        const isAdminVerified = prevRecord.remarks && prevRecord.remarks.includes('ADMIN_VERIFIED');
+
+        if (!isAdminVerified) {
+          return res.status(403).json({ 
+            error: 'Cannot record in time attendance. Previous day out-time is missing. Contact your admin.',
+            details: 'Previous day attendance needs admin verification before submitting today\'s attendance. Please contact your admin.',
+            employee_name: employeeRows[0].full_name,
+            previous_date: prevRecord.attendance_date,
+            previous_in_time: prevRecord.in_time,
+            previous_status: prevRecord.in_status
+          });
+        } else {
+          // Log successful verification check
+          console.log(`Employee ${emp_id} (${employeeRows[0].full_name}) can submit attendance - previous day verified by admin`);
+        }
+      }
+    }
+
+    // Record new attendance with APPROVED status
     const [result] = await pool.query(
       `INSERT INTO attendance_register (
         emp_id, attendance_date, in_time, in_location, in_latitude, in_longitude, 
@@ -72,13 +99,28 @@ const recordInTime = async (req, res) => {
       ]
     );
 
-    res.status(201).json({ attendance_id: result.insertId, message: 'In-time recorded successfully' });
+    // Log successful attendance recording
+    console.log(`Employee ${emp_id} (${employeeRows[0].full_name}) successfully recorded in-time at ${in_time || 'current time'}`);
+
+    res.status(201).json({ 
+      attendance_id: result.insertId, 
+      message: 'In-time recorded successfully',
+      employee_name: employeeRows[0].full_name,
+      attendance_date: new Date().toISOString().split('T')[0],
+      in_time: in_time,
+      timestamp: new Date().toISOString(),
+      status: 'APPROVED'
+    });
+
   } catch (error) {
     console.error('Error recording in-time:', error);
-    res.status(500).json({ error: 'Server error', details: error.message });
+    res.status(500).json({ 
+      error: 'Server error', 
+      details: error.message,
+      message: 'Failed to record attendance. Please try again.'
+    });
   }
 };
-
 /**
  * Records the employee's out-time for the current day.
  * @param {Object} req - Express request object containing employee ID and out-time details.
